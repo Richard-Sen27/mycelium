@@ -69,11 +69,12 @@ func TestJobIsolationLima(t *testing.T) {
 		t.Skip("set MYCEL_TEST_LIMA=1 on macOS to run the applevf (Lima) isolation suite")
 	}
 	h := startHubWith(t, hubOptions{Root: limaRoot})
-	hubNode := &Node{t: t, Name: "hub-node", LocalAddr: h.LocalAddr, LocalURL: "http://" + h.LocalAddr}
+	hubNode := &Node{t: t, Name: "hub-node", Home: h.Home, LocalAddr: h.LocalAddr, LocalURL: "http://" + h.LocalAddr}
 	if !waitFor(t, 60*time.Second, func() bool { return slices.Contains(availableBackends(t, hubNode), "applevf") }) {
 		t.Fatalf("hub-node does not have applevf available: %v", hubNode.Status(t))
 	}
 	waitBackends(t, h, "applevf", hubNode) // and the hub knows it
+	localFirstOff(t, h, hubNode)
 
 	// default: workspace only, no egress, no host files, own kernel.
 	start := time.Now()

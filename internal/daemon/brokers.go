@@ -37,6 +37,11 @@ const (
 	sampleGrantSocket = "grt_01ARZ3NDEKTSV4RRFFQ69G5FAV.sock"
 )
 
+// defaultGPURunner runs nvidia-smi for the GPU broker; nil is the broker's
+// own runner (which never runs on macOS). The CI-only fake sandbox build
+// replaces it (backends_fake.go).
+var defaultGPURunner gpu.Runner
+
 func ollamaUpstreamDefault() string {
 	if v := os.Getenv(EnvOllamaUpstream); v != "" {
 		return v

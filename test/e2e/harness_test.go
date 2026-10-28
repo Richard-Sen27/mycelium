@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -38,6 +39,10 @@ func TestMain(m *testing.M) {
 }
 
 func runMain(m *testing.M) int {
+	// The test binary doubles as a job command (see jobHelper).
+	if mode := os.Getenv(envJobHelper); mode != "" {
+		return jobHelper(mode)
+	}
 	dir, err := os.MkdirTemp("", "mycel-e2e-bin-")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "e2e: temp dir:", err)
@@ -388,6 +393,9 @@ type hubOptions struct {
 	// Root returns a fresh root directory for the hub (and its nodes);
 	// nil means t.TempDir().
 	Root func(t *testing.T) string
+	// HubYAML is appended to hub.yaml after `hub init`, e.g. a grants
+	// section with auto rules and pending_ttl.
+	HubYAML string
 }
 
 // startHubWith is startHub with extra daemon arguments, environment or root.
@@ -400,6 +408,9 @@ func startHubWith(t *testing.T, o hubOptions) *Hub {
 		}
 		h := initHubAt(t, root)
 		h.DaemonArgs, h.DaemonEnv = o.Args, o.Env
+		if o.HubYAML != "" {
+			appendHubYAML(t, h, o.HubYAML)
+		}
 		err := h.start()
 		if err == nil {
 			return h
@@ -698,4 +709,92 @@ func listTokens(t *testing.T, h *Hub, apiKey string) []jsonToken {
 	}
 	mustJSON(t, out, &resp)
 	return resp.Tokens
+}
+
+// appendHubYAML appends text to the hub's hub.yaml (written by `hub init`).
+func appendHubYAML(t *testing.T, h *Hub, text string) {
+	t.Helper()
+	path := filepath.Join(h.Home, "data", "hub", "hub.yaml")
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0o600) //nolint:gosec // test temp dir
+	if err != nil {
+		t.Fatalf("hub.yaml: %v", err)
+	}
+	if _, err := f.WriteString("\n" + text + "\n"); err != nil {
+		_ = f.Close()
+		t.Fatalf("hub.yaml: %v", err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatalf("hub.yaml: %v", err)
+	}
+}
+
+// ---- the node's local API ----
+
+// localToken reads the node daemon's local API token (written at every
+// daemon start). It is never logged.
+func (n *Node) localToken(t *testing.T) string {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join(n.Home, "data", "node", "local.token")) //nolint:gosec // test temp dir
+	if err != nil {
+		t.Fatalf("%s: local token: %v", n.Name, err)
+	}
+	return strings.TrimSpace(string(b))
+}
+
+// Local sends one request to the node's local API with its local token and
+// returns the status code and body; code 0 means the daemon did not answer.
+func (n *Node) Local(t *testing.T, method, path, body string) (int, []byte) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, method, n.LocalURL+path, strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+n.localToken(t))
+	if body != "" {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return 0, nil
+	}
+	defer func() { _ = resp.Body.Close() }()
+	b, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	if err != nil {
+		return 0, nil
+	}
+	return resp.StatusCode, b
+}
+
+// LocalJSON GETs a local API route and decodes a 200 answer into v; it
+// reports whether it did.
+func (n *Node) LocalJSON(t *testing.T, path string, v any) bool {
+	t.Helper()
+	code, b := n.Local(t, http.MethodGet, path, "")
+	if code != http.StatusOK {
+		return false
+	}
+	if err := json.Unmarshal(b, v); err != nil {
+		t.Errorf("%s: GET %s: %v: %q", n.Name, path, err, b)
+		return false
+	}
+	return true
+}
+
+// waitLocal polls GET path on the node's local API every 100 ms until cond
+// holds for a decoded 200 answer or timeout passes; it returns the last
+// decoded answer and whether cond held.
+func waitLocal[T any](t *testing.T, n *Node, path string, timeout time.Duration, cond func(T) bool) (T, bool) {
+	t.Helper()
+	var last T
+	ok := waitFor(t, timeout, func() bool {
+		var v T
+		if !n.LocalJSON(t, path, &v) {
+			return false
+		}
+		last = v
+		return cond(v)
+	})
+	return last, ok
 }

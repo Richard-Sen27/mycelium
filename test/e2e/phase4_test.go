@@ -44,6 +44,7 @@ func startP4(t *testing.T, nodeEnv ...string) (h *Hub, alpha, beta *Node) {
 	alpha = joinNode(t, h, "alpha", "docker,ollama,sandbox", "", env...)
 	beta = joinNode(t, h, "beta", "docker,ollama,sandbox", "", env...)
 	waitBackends(t, h, "fake", alpha, beta)
+	localFirstOff(t, h, alpha, beta)
 	return h, alpha, beta
 }
 

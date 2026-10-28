@@ -168,6 +168,48 @@ func TestGrantJobSubjects(t *testing.T) {
 	wantCode(t, err, connect.CodeFailedPrecondition)
 }
 
+// A job that waits in the queue for its pinned node can get a grant there,
+// so the grant is attached before the node creates the sandbox; an
+// unpinned queued job has no node yet and cannot.
+func TestGrantForQueuedPinnedJob(t *testing.T) {
+	e := newGrantEnv(t, grantEnvOpts{allowFake: true})
+	ctx := context.Background()
+	run := func(spec *mycelv1.JobSpec) string {
+		t.Helper()
+		r, err := e.jobs(e.aliceKey).RunJob(ctx, connect.NewRequest(&mycelv1.RunJobRequest{Spec: spec}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return r.Msg.GetJob().GetId()
+	}
+	// gpu-box reports no CPU count, so it takes two jobs at a time.
+	for range 2 {
+		waitSandboxCtl(t, e.sn, run(fake("sleep", "60")), true)
+	}
+	pinned := fake("true")
+	pinned.Node = "gpu-box"
+	queued, loose := run(pinned), run(fake("true"))
+	for _, id := range []string{queued, loose} {
+		r, err := e.jobs(e.aliceKey).GetJob(ctx, connect.NewRequest(&mycelv1.GetJobRequest{Id: id}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if st := r.Msg.GetJob().GetState(); st != mycelv1.JobState_JOB_STATE_QUEUED {
+			t.Fatalf("job %s is %s, want queued", id, st)
+		}
+	}
+	gr, err := e.aliceG.RequestGrant(ctx, connect.NewRequest(&mycelv1.RequestGrantRequest{Subject: "job:" + queued, Spec: ollamaSpec()}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if g := gr.Msg.GetGrant(); g.GetState() != mycelv1.GrantState_GRANT_STATE_ACTIVE || g.GetNode() != "gpu-box" {
+		t.Fatalf("grant for the queued pinned job: %+v", g)
+	}
+	waitAttach(t, e.sn, gr.Msg.GetGrant().GetId())
+	_, err = e.aliceG.RequestGrant(ctx, connect.NewRequest(&mycelv1.RequestGrantRequest{Subject: "job:" + loose, Spec: ollamaSpec()}))
+	wantCode(t, err, connect.CodeFailedPrecondition)
+}
+
 func TestRemoveNodeEndsGrants(t *testing.T) {
 	e := newGrantEnv(t)
 	ctx := context.Background()

@@ -133,6 +133,7 @@ func defaultRunConfig() runConfig {
 		localArtifactMax:     maxLocalArtifactBytes,
 
 		ollamaUpstream:   ollamaUpstreamDefault(),
+		gpuRunner:        defaultGPURunner,
 		idleSampleEvery:  30 * time.Second,
 		brokerUsageEvery: 10 * time.Second,
 		reportPollEvery:  time.Second,

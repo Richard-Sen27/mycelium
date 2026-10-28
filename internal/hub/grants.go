@@ -465,8 +465,15 @@ func (s *server) resolveSubject(ctx context.Context, id string) (*grantSubject, 
 		switch j.State {
 		case mycelv1.JobState_JOB_STATE_STARTING, mycelv1.JobState_JOB_STATE_RUNNING:
 		case mycelv1.JobState_JOB_STATE_QUEUED:
+			// The node fixes a sandbox's environment, and with it the
+			// broker credentials, when it creates the sandbox: a job that
+			// needs a grant from its first command gets it while it waits
+			// in the queue, which works once it is pinned to its node.
+			if pin := j.Spec.GetNode(); pin != "" {
+				return &grantSubject{id: id, owner: j.OwnerID, node: pin, jobChannel: j.Spec.GetChannel()}, nil
+			}
 			return &grantSubject{id: id, owner: j.OwnerID}, connect.NewError(connect.CodeFailedPrecondition,
-				fmt.Errorf("job %s is not on a node yet; request the grant once it is starting or running", jid))
+				fmt.Errorf("job %s is not on a node yet; pin it to a node or request the grant once it is starting or running", jid))
 		default:
 			return &grantSubject{id: id, owner: j.OwnerID}, connect.NewError(connect.CodeFailedPrecondition,
 				fmt.Errorf("job %s has finished", jid))
@@ -1553,7 +1560,14 @@ func (s *server) usageBlock(ctx context.Context, g *mycelv1.Grant) (string, erro
 		if err != nil {
 			return "", s.internalError("get job", err)
 		}
-		if j.State != mycelv1.JobState_JOB_STATE_STARTING && j.State != mycelv1.JobState_JOB_STATE_RUNNING {
+		switch j.State {
+		case mycelv1.JobState_JOB_STATE_STARTING, mycelv1.JobState_JOB_STATE_RUNNING:
+		case mycelv1.JobState_JOB_STATE_QUEUED:
+			// Granted while queued for its pinned node (resolveSubject).
+			if j.Spec.GetNode() != g.GetNode() {
+				return "job " + stateWord(j.State), nil
+			}
+		default:
 			return "job " + stateWord(j.State), nil
 		}
 	}

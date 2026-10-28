@@ -394,7 +394,12 @@ func TestBudgetPausesWorkers(t *testing.T) {
 	if u := channelUsage(t, h, ch); u.Paused {
 		t.Fatalf("%s paused again after the reset: %+v", ch, u)
 	}
-	p.setScript(t, []fh.Step{join(ch), {SleepMS: 60_000}})
+	// The pause below can reach the hub before c1's first call, which is
+	// then refused ("agent paused"); c1 must keep running through that, so
+	// its join may fail (it is a member of its home channel already).
+	cJoin := join(ch)
+	cJoin.AllowError = true
+	p.setScript(t, []fh.Step{cJoin, {SleepMS: 60_000}})
 	p.spawnCLI(t, "c1", ch, "wait")
 	const c1 = "agent:c1@alpha"
 	if got, ok := waitAgents(t, h, 15*time.Second, []string{c1}, func(a jsonAgent) bool { return a.State == "running" }); !ok {
