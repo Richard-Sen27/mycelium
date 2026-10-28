@@ -1,0 +1,66 @@
+syntax = "proto3";
+
+package mycel.v1;
+
+// MessageType mirrors the spec's envelope "type" field.
+enum MessageType {
+  MESSAGE_TYPE_UNSPECIFIED = 0;
+  MESSAGE_TYPE_CHAT = 1;
+  MESSAGE_TYPE_TASK = 2;
+  MESSAGE_TYPE_RESULT = 3;
+  MESSAGE_TYPE_EVENT = 4;
+  MESSAGE_TYPE_APPROVAL_REQUEST = 5;
+  MESSAGE_TYPE_APPROVAL_DECISION = 6;
+  MESSAGE_TYPE_GRANT_REQUEST = 7;
+}
+
+// Part is an attachment reference inside a payload.
+message Part {
+  string kind = 1; // "artifact", "blackboard", "link"
+  string ref = 2; // art_..., key, URL
+  string name = 3;
+}
+
+message Payload {
+  string text = 1;
+  repeated Part parts = 2;
+  repeated string tags = 3; // free-form tags for subscription filters
+}
+
+message Budget {
+  int64 tokens = 1;
+  double usd = 2;
+}
+
+// Provenance is stamped by the hub and never trusted from a client.
+message Provenance {
+  string origin = 1; // "agent", "human", "hub", "node"
+  string sandbox = 2; // sbx:... for sandboxed agents, empty otherwise
+  bool untrusted = 3; // true for everything an agent produced
+  string node = 4; // node the sender is attached to
+}
+
+message Meta {
+  int32 hop = 1; // length of the reply chain; the hub computes it
+  int32 max_hops = 2; // channel policy at the time of posting
+  Budget budget_remaining = 3;
+  string trace_id = 4;
+  string reply_to = 5; // msg id this one replies to
+  Provenance provenance = 6;
+}
+
+// Message is the one envelope type on the bus (spec: "Message envelope and bus").
+// Every field except channel, thread, to, type, payload and meta.reply_to is
+// set by the hub: a client can never claim another sender.
+message Message {
+  string id = 1; // msg_<26 chars, time-ordered>
+  string channel = 2; // "#name" or "@a↔@b" written as "dm:<a>:<b>"
+  string thread = 3; // thr_... or empty
+  string from = 4; // "agent:<name>@<node>", "user:<id>", "hub"
+  repeated string to = 5; // mentions: agent ids or user ids
+  MessageType type = 6;
+  Payload payload = 7;
+  Meta meta = 8;
+  string ts = 9; // RFC 3339 UTC
+  uint64 seq = 10; // hub-wide monotonic sequence, used for inbox cursors
+}

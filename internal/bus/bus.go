@@ -72,7 +72,49 @@ const (
 const (
 	RPCRegisterAgent     = "agent.register"
 	RPCRefreshAgentToken = "agent.refresh"
+
+	// Phase 2: agent-scoped RPCs. Each request carries an AgentCall token
+	// that the hub verifies and binds to the node named in the subject.
+	RPCAgentPost         = "agent.post"          // AgentPostRequest -> PostResponse
+	RPCAgentJoinChannel  = "agent.channel.join"  // AgentJoinChannelRequest -> AgentJoinChannelResponse
+	RPCAgentLeaveChannel = "agent.channel.leave" // AgentLeaveChannelRequest -> AgentLeaveChannelResponse
+	RPCAgentListChannels = "agent.channel.list"  // AgentListChannelsRequest -> ListChannelsResponse
+	RPCAgentListAgents   = "agent.list"          // AgentListAgentsRequest -> AgentListAgentsResponse
+	RPCAgentWhoami       = "agent.whoami"        // AgentWhoamiRequest -> AgentWhoamiResponse
+	RPCAgentInboxPull    = "agent.inbox.pull"    // InboxPullRequest -> InboxPullResponse (long poll)
+	RPCAgentBBGet        = "agent.bb.get"        // AgentBlackboardGetRequest -> BlackboardGetResponse
+	RPCAgentBBPut        = "agent.bb.put"        // AgentBlackboardPutRequest -> BlackboardPutResponse
+	RPCAgentListMessages = "agent.messages.list" // AgentListMessagesRequest -> ListMessagesResponse
 )
+
+// StatusHeader is set on every RPC reply from the hub: "ok" or "error". On
+// "error" the payload is a mycelv1.CtlResponse{ok:false, error}. Clients check
+// the header before decoding the payload (docs/decisions.md D014).
+const (
+	StatusHeader = "Mycel-Status"
+	StatusOK     = "ok"
+	StatusError  = "error"
+)
+
+// JetStream streams owned by the hub (phase 2). Only the hub publishes to them.
+const (
+	StreamChannels        = "CH" // subjects ch.>; one Message per entry
+	StreamChannelsSubject = "ch.>"
+	StreamAudit           = "AUDIT" // subjects audit.>; JSON audit entries
+	StreamAuditSubject    = "audit.>"
+)
+
+// ChannelSubject is the persisted subject for a channel's messages:
+// "ch.<name without the leading '#'>.msg". Channel names never contain '.',
+// '*', '>' or spaces (see internal/channels), so the token is safe as is.
+func ChannelSubject(channel string) string {
+	return "ch." + strings.TrimPrefix(channel, "#") + ".msg"
+}
+
+// AuditSubject is "audit.<action>" with '.' in the action replaced by '_'.
+func AuditSubject(action string) string {
+	return "audit." + strings.ReplaceAll(action, ".", "_")
+}
 
 // NodeFromSubject returns the node name in a "node.<name>.<rest>" subject.
 func NodeFromSubject(subject string) (string, bool) {

@@ -32,6 +32,12 @@ type Principal struct {
 	Role Role   // users only
 	// OwnerID is the user that owns a node or agent principal; equals ID for users.
 	OwnerID string
+	// Member is set by the caller for channel actions: the principal is a
+	// member of the channel in Resource.
+	Member bool
+	// Creator is set by the caller for channel actions: the principal
+	// created the channel in Resource (agents creating task channels).
+	Creator bool
 }
 
 // Action names. Phase 1 set; later phases append.
@@ -51,6 +57,20 @@ const (
 	ActionAPIKeyCreate = Action("apikey.create")
 	ActionAgentList    = Action("agent.list")
 	ActionAgentRevoke  = Action("agent.revoke")
+
+	// Phase 2: channels. Resource.Kind is "channel" and Resource.ID the
+	// channel name; Resource.OwnerID the channel owner (a user id).
+	ActionChannelCreate       = Action("channel.create")
+	ActionChannelList         = Action("channel.list")
+	ActionChannelGet          = Action("channel.get")
+	ActionChannelPolicyUpdate = Action("channel.policy.update")
+	ActionChannelMemberAdd    = Action("channel.member.add")
+	ActionChannelMemberRemove = Action("channel.member.remove")
+	ActionChannelArchive      = Action("channel.archive")
+	ActionChannelPost         = Action("channel.post")
+	ActionChannelRead         = Action("channel.read")
+	ActionBlackboardRead      = Action("bb.read")
+	ActionBlackboardWrite     = Action("bb.write")
 )
 
 // Resource is what the action targets. Kind is "token", "node", "user",
@@ -78,7 +98,15 @@ type Policy interface {
 //   - members may create tokens (they become the owner), list and get nodes,
 //     remove and set caps on nodes they own, list users and agents, revoke
 //     agents they own, and create API keys for themselves;
-//   - nodes and agents may do nothing through this interface in phase 1;
+//   - nodes may do nothing through this interface;
+//   - channels (phase 2): the caller resolves membership and passes it in
+//     Principal.Member; Resource carries the channel name and owner. Users:
+//     create channels (they become the owner); list; get, post, read and use
+//     the blackboard on channels they are a member of (admins: all); update
+//     policy, add and remove members and archive channels they own. Agents:
+//     post, read and use the blackboard on channels they are a member of;
+//     create task channels (name prefix "#task-"); add members to task
+//     channels they created (Principal.Creator true);
 //   - anything else is denied.
 func Default() Policy { return defaultPolicy{} }
 

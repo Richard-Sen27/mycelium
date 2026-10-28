@@ -1,0 +1,15 @@
+name: claude-code
+display_name: Claude Code
+install: npm install -g @anthropic-ai/claude-code
+detect: claude --version
+mcp:
+  file: .mcp.json
+  entry:
+    mycel:
+      command: mycel
+      args: ["mcp", "--agent", "{{agent}}", "--harness", "claude-code"]
+hooks:
+  file: .claude/settings.json
+  entries:
+    UserPromptSubmit:
+      - command: mycel hook --agent {{agent}}

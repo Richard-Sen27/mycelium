@@ -1,0 +1,307 @@
+syntax = "proto3";
+
+package mycel.v1;
+
+import "mycel/v1/envelope.proto";
+
+// ChannelType mirrors the spec's channel table.
+enum ChannelType {
+  CHANNEL_TYPE_UNSPECIFIED = 0;
+  CHANNEL_TYPE_TOPIC = 1;
+  CHANNEL_TYPE_TASK = 2;
+  CHANNEL_TYPE_DIRECT = 3;
+  CHANNEL_TYPE_SYSTEM = 4;
+}
+
+// ChannelPolicy is the per-channel policy; zero values mean "hub default".
+message ChannelPolicy {
+  int32 max_hops = 1; // default 8
+  int32 rate_per_minute = 2; // messages per minute per agent, default 60
+  bool agents_may_post = 3; // false on system channels
+  bool humans_may_post = 4;
+  bool open_to_members = 5; // any member (human or their agents) may join without invite
+  repeated string allowed_profiles = 6; // phase 4
+  string retention = 7; // Go duration, "" = keep
+  Budget budget = 8; // phase 3
+}
+
+message Member {
+  string id = 1; // "agent:<name>@<node>" or "user:<id>"
+  string role = 2; // "owner", "human", "agent", "observer"
+  string joined_at = 3;
+}
+
+message Channel {
+  string name = 1; // "#backend", "#task-4821-fix-auth", "dm:<a>:<b>", "#alerts"
+  ChannelType type = 2;
+  string owner_id = 3; // user id
+  ChannelPolicy policy = 4;
+  repeated Member members = 5;
+  string created_at = 6;
+  string archived_at = 7;
+  uint64 last_seq = 8;
+}
+
+// Subscription is how an agent filters a channel's traffic (spec: "Subscriptions").
+message Subscription {
+  string channel = 1;
+  bool mentions_only = 2;
+  repeated MessageType types = 3; // empty = all
+  repeated string tags = 4; // empty = all
+}
+
+message BlackboardEntry {
+  string channel = 1;
+  string key = 2;
+  string value = 3; // up to 64 KiB
+  string updated_by = 4;
+  string updated_at = 5;
+  uint64 version = 6;
+}
+
+// ---- Human API (Connect, API key) ----
+
+message CreateChannelRequest {
+  string name = 1;
+  ChannelType type = 2;
+  ChannelPolicy policy = 3;
+  repeated string members = 4; // initial members in addition to the creator
+}
+
+message CreateChannelResponse {
+  Channel channel = 1;
+}
+
+message ListChannelsRequest {
+  bool include_archived = 1;
+}
+
+message ListChannelsResponse {
+  repeated Channel channels = 1;
+}
+
+message GetChannelRequest {
+  string name = 1;
+}
+
+message GetChannelResponse {
+  Channel channel = 1;
+}
+
+message UpdateChannelPolicyRequest {
+  string name = 1;
+  ChannelPolicy policy = 2;
+}
+
+message UpdateChannelPolicyResponse {
+  Channel channel = 1;
+}
+
+message AddMemberRequest {
+  string channel = 1;
+  string member = 2;
+  string role = 3; // default "agent" for agents, "human" for users
+}
+
+message AddMemberResponse {
+  Channel channel = 1;
+}
+
+message RemoveMemberRequest {
+  string channel = 1;
+  string member = 2;
+}
+
+message RemoveMemberResponse {}
+
+message ArchiveChannelRequest {
+  string name = 1;
+}
+
+message ArchiveChannelResponse {}
+
+// PostRequest is shared by humans (Connect) and agents (bus RPC).
+message PostRequest {
+  string channel = 1; // "#name", or "@agent:<name>@<node>" / "@user:<id>" for a direct message
+  string text = 2;
+  string thread = 3;
+  repeated string mentions = 4;
+  MessageType type = 5; // default CHAT
+  string reply_to = 6;
+  repeated string tags = 7;
+  repeated Part parts = 8;
+}
+
+message PostResponse {
+  Message message = 1;
+}
+
+message ListMessagesRequest {
+  string channel = 1;
+  string thread = 2; // optional
+  uint64 after_seq = 3;
+  uint64 before_seq = 4;
+  int32 limit = 5; // default 50, max 500
+}
+
+message ListMessagesResponse {
+  repeated Message messages = 1;
+}
+
+message WatchRequest {
+  repeated string channels = 1; // empty = every channel the caller may read
+  uint64 after_seq = 2;
+}
+
+message WatchResponse {
+  Message message = 1;
+}
+
+message BlackboardGetRequest {
+  string channel = 1;
+  string key = 2; // empty = list all keys
+}
+
+message BlackboardGetResponse {
+  repeated BlackboardEntry entries = 1;
+}
+
+message BlackboardPutRequest {
+  string channel = 1;
+  string key = 2;
+  string value = 3;
+  uint64 expect_version = 4; // 0 = unconditional
+}
+
+message BlackboardPutResponse {
+  BlackboardEntry entry = 1;
+}
+
+message BlackboardDeleteRequest {
+  string channel = 1;
+  string key = 2;
+}
+
+message BlackboardDeleteResponse {}
+
+message ChannelSummaryRequest {
+  string channel = 1;
+}
+
+message ChannelSummaryResponse {
+  string summary = 1; // hub-generated text for late joiners
+  repeated BlackboardEntry blackboard = 2;
+  repeated Message recent = 3;
+}
+
+service ChannelService {
+  rpc CreateChannel(CreateChannelRequest) returns (CreateChannelResponse);
+  rpc ListChannels(ListChannelsRequest) returns (ListChannelsResponse);
+  rpc GetChannel(GetChannelRequest) returns (GetChannelResponse);
+  rpc UpdateChannelPolicy(UpdateChannelPolicyRequest) returns (UpdateChannelPolicyResponse);
+  rpc AddMember(AddMemberRequest) returns (AddMemberResponse);
+  rpc RemoveMember(RemoveMemberRequest) returns (RemoveMemberResponse);
+  rpc ArchiveChannel(ArchiveChannelRequest) returns (ArchiveChannelResponse);
+  rpc Post(PostRequest) returns (PostResponse);
+  rpc ListMessages(ListMessagesRequest) returns (ListMessagesResponse);
+  rpc Watch(WatchRequest) returns (stream WatchResponse);
+  rpc BlackboardGet(BlackboardGetRequest) returns (BlackboardGetResponse);
+  rpc BlackboardPut(BlackboardPutRequest) returns (BlackboardPutResponse);
+  rpc BlackboardDelete(BlackboardDeleteRequest) returns (BlackboardDeleteResponse);
+  rpc ChannelSummary(ChannelSummaryRequest) returns (ChannelSummaryResponse);
+}
+
+// ---- Agent RPCs over the bus (node.<name>.rpc.<method>) ----
+//
+// Every agent RPC carries the agent's token; the hub verifies it and requires
+// claims.NodeName to equal the node derived from the subject. Replies follow
+// the Mycel-Status header convention (docs/decisions.md D014).
+
+message AgentCall {
+  string token = 1; // agent token
+}
+
+message AgentPostRequest {
+  AgentCall call = 1;
+  PostRequest post = 2;
+}
+
+message AgentJoinChannelRequest {
+  AgentCall call = 1;
+  string channel = 2;
+  Subscription subscription = 3; // optional filter
+}
+
+message AgentJoinChannelResponse {
+  Channel channel = 1;
+  ChannelSummaryResponse summary = 2;
+}
+
+message AgentLeaveChannelRequest {
+  AgentCall call = 1;
+  string channel = 2;
+}
+
+message AgentLeaveChannelResponse {}
+
+message AgentListChannelsRequest {
+  AgentCall call = 1;
+}
+
+message AgentListAgentsRequest {
+  AgentCall call = 1;
+  string channel = 2; // empty = all agents visible to the caller
+}
+
+message AgentInfo {
+  string id = 1;
+  string node_name = 2;
+  string owner_id = 3;
+  string harness = 4;
+  string state = 5;
+  repeated string channels = 6;
+}
+
+message AgentListAgentsResponse {
+  repeated AgentInfo agents = 1;
+}
+
+message AgentWhoamiRequest {
+  AgentCall call = 1;
+}
+
+message AgentWhoamiResponse {
+  AgentInfo agent = 1;
+  string hub_url = 2;
+  string trust_domain = 3;
+}
+
+// InboxPull returns messages addressed to the agent after a cursor. With
+// wait_ms > 0 the hub holds the request until a message arrives or the wait
+// elapses (long poll). Filtering (subscriptions, mentions) happens on the hub.
+message InboxPullRequest {
+  AgentCall call = 1;
+  uint64 after_seq = 2;
+  int32 limit = 3; // default 20, max 200
+  int32 wait_ms = 4; // 0 = return immediately; max 60000
+}
+
+message InboxPullResponse {
+  repeated Message messages = 1;
+  uint64 next_seq = 2; // cursor to pass next time
+}
+
+message AgentBlackboardGetRequest {
+  AgentCall call = 1;
+  BlackboardGetRequest get = 2;
+}
+
+message AgentBlackboardPutRequest {
+  AgentCall call = 1;
+  BlackboardPutRequest put = 2;
+}
+
+message AgentListMessagesRequest {
+  AgentCall call = 1;
+  ListMessagesRequest list = 2;
+}
