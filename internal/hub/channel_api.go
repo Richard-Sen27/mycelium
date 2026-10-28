@@ -68,8 +68,10 @@ func validatePolicy(p *mycelv1.ChannelPolicy) error {
 			return invalidArg("invalid retention %q: a positive Go duration", r)
 		}
 	}
-	if b := p.GetBudget(); b.GetTokens() < 0 || b.GetUsd() < 0 {
-		return invalidArg("budget must not be negative")
+	if p.GetBudget() != nil {
+		if err := validBudget(p.GetBudget()); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -220,7 +222,9 @@ func (c *channelService) UpdateChannelPolicy(ctx context.Context, req *connect.R
 	s.audit(ctx, u.ID, string(policy.ActionChannelPolicyUpdate), "channel:"+ch.Name, outcomeOK, map[string]any{
 		"max_hops": eff.GetMaxHops(), "rate_per_minute": eff.GetRatePerMinute(), "open_to_members": eff.GetOpenToMembers(),
 		"agents_may_post": eff.GetAgentsMayPost(), "humans_may_post": eff.GetHumansMayPost(),
+		"budget_tokens": eff.GetBudget().GetTokens(), "budget_usd": eff.GetBudget().GetUsd(),
 	})
+	s.applyChannelBudget(ctx, u.ID, ch.Name)
 	pc, err := s.channelToProto(ctx, ch)
 	if err != nil {
 		return nil, err

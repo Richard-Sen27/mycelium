@@ -71,7 +71,7 @@ func TestStoreAgentCap(t *testing.T) {
 	st := newTestStore(t)
 	ctx := context.Background()
 	reg := func(name string) error {
-		_, err := st.upsertAgent(ctx, &agentRow{ID: "agent:" + name + "@n", Name: name, NodeName: "n", OwnerID: "usr_x",
+		_, _, err := st.upsertAgent(ctx, &agentRow{ID: "agent:" + name + "@n", Name: name, NodeName: "n", OwnerID: "usr_x",
 			State: "running", CreatedAt: nowString()})
 		return err
 	}
@@ -99,6 +99,16 @@ func TestStoreAgentCap(t *testing.T) {
 	}
 	if err := reg("a1"); !errors.Is(err, errTokenSpent) {
 		t.Fatalf("revoked agent re-registered: %v", err)
+	}
+	// Stopped agents do not count either, but starting one again does.
+	if err := st.setAgentExited(ctx, "agent:a2@n", 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := reg("two-more"); err != nil {
+		t.Fatalf("after exit: %v", err)
+	}
+	if err := reg("a2"); !errors.Is(err, errTooManyAgents) {
+		t.Fatalf("stopped agent restarted past the cap: %v", err)
 	}
 	// The revoked set survives a reopen.
 	st2, err := openStore(st.path)

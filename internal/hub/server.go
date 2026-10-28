@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"sync"
 	"time"
 
 	"connectrpc.com/connect"
@@ -51,6 +52,15 @@ type server struct {
 	enrolLimit *rateLimiter
 	beats      *beatState
 	ch         *chanState
+
+	// life serialises agent lifecycle changes (usage accounting, pause,
+	// resume, stop, exit) so budget checks and state changes cannot
+	// interleave, and control messages to a node leave in decision order.
+	life sync.Mutex
+	// ctlq sends lifecycle control messages per node, outside life.
+	ctlq *ctlQueues
+	// lifeLimit rate-limits a node's usage and exit reports.
+	lifeLimit *rateLimiter
 }
 
 func runHub(ctx context.Context, opts Options, ready chan<- Ready) (err error) {
@@ -116,6 +126,8 @@ func runHub(ctx context.Context, opts Options, ready chan<- Ready) (err error) {
 		enrolLimit: newRateLimiter(enrolRatePerMinute, enrolBurst),
 		beats:      newBeatState(),
 		ch:         newChanState(),
+		ctlq:       newCtlQueues(),
+		lifeLimit:  newRateLimiter(lifeReportsPerMinute, lifeReportsBurst),
 	}
 	defer s.ch.shutdown()
 	// Startup steps run to completion even if ctx is already cancelled.

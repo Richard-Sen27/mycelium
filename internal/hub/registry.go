@@ -12,6 +12,7 @@ import (
 
 	mycelv1 "github.com/richard-sen27/mycelium/gen/mycel/v1"
 	"github.com/richard-sen27/mycelium/internal/bus"
+	"github.com/richard-sen27/mycelium/internal/channels"
 	"github.com/richard-sen27/mycelium/internal/identity"
 )
 
@@ -84,6 +85,52 @@ func (s *server) handleRPC(msg *nats.Msg) {
 		}
 		return
 	}
+	switch method {
+	case bus.RPCAgentUsage, bus.RPCAgentExited:
+		// Lifecycle reports take the lifecycle lock, so they leave the
+		// serial subscription callback; they are rate limited per node and
+		// share the node's RPC slots.
+		done, err := s.lifeReport(node)
+		if err != nil {
+			s.reply(msg, nil, err)
+			return
+		}
+		data := msg.Data
+		if !s.ch.goWork(func(func()) {
+			defer done()
+			ctx, cancel := context.WithTimeout(context.Background(), rpcTimeout)
+			defer cancel()
+			var (
+				resp proto.Message
+				err  error
+			)
+			if method == bus.RPCAgentUsage {
+				resp, err = s.agentUsage(ctx, node, data)
+			} else {
+				resp, err = s.agentExited(ctx, node, data)
+			}
+			s.reply(msg, resp, err)
+		}) {
+			done()
+			s.reply(msg, nil, connect.NewError(connect.CodeUnavailable, errors.New("hub busy or stopping; retry")))
+		}
+		return
+	case bus.RPCRegisterAgent:
+		// Registration takes the lifecycle lock; a pause it decides is sent
+		// to the node only after the reply (gate).
+		data := msg.Data
+		if !s.ch.goWork(func(func()) {
+			ctx, cancel := context.WithTimeout(context.Background(), rpcTimeout)
+			defer cancel()
+			gate := make(chan struct{})
+			defer close(gate)
+			resp, err := s.registerAgent(ctx, node, data, gate)
+			s.reply(msg, resp, err)
+		}) {
+			s.reply(msg, nil, connect.NewError(connect.CodeUnavailable, errors.New("hub busy or stopping; retry")))
+		}
+		return
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), rpcTimeout)
 	defer cancel()
 	var (
@@ -91,8 +138,6 @@ func (s *server) handleRPC(msg *nats.Msg) {
 		err  error
 	)
 	switch method {
-	case bus.RPCRegisterAgent:
-		resp, err = s.registerAgent(ctx, node, msg.Data)
 	case bus.RPCRefreshAgentToken:
 		resp, err = s.refreshAgent(ctx, node, msg.Data)
 	default:
@@ -170,7 +215,7 @@ func validHarness(h string) bool {
 
 func internalRPC() error { return rpcErr(connect.CodeInternal, "internal error") }
 
-func (s *server) registerAgent(ctx context.Context, node string, data []byte) (proto.Message, error) {
+func (s *server) registerAgent(ctx context.Context, node string, data []byte, gate <-chan struct{}) (proto.Message, error) {
 	actor := "node:" + node
 	var req mycelv1.RegisterAgentRequest
 	if err := proto.Unmarshal(data, &req); err != nil {
@@ -190,6 +235,15 @@ func (s *server) registerAgent(ctx context.Context, node string, data []byte) (p
 		s.audit(ctx, actor, "agent.register", agentID, outcomeError, map[string]any{"reason": "invalid harness"})
 		return nil, rpcErr(connect.CodeInvalidArgument, "invalid harness: up to 64 chars of a-z, 0-9 and '-'")
 	}
+	if err := validBudget(req.GetBudget()); err != nil {
+		s.audit(ctx, actor, "agent.register", agentID, outcomeError, map[string]any{"reason": "invalid budget"})
+		return nil, rpcErr(connect.CodeInvalidArgument, "invalid budget: tokens and usd must be finite and not negative")
+	}
+	workdir := req.GetWorkdir()
+	if len(workdir) > maxWorkdirLen || !channels.IsPrintable(workdir) {
+		s.audit(ctx, actor, "agent.register", agentID, outcomeError, map[string]any{"reason": "invalid workdir"})
+		return nil, rpcErr(connect.CodeInvalidArgument, "invalid workdir: up to %d printable bytes", maxWorkdirLen)
+	}
 	n, err := s.st.getNode(ctx, node)
 	if err != nil {
 		s.audit(ctx, actor, "agent.register", agentID, outcomeError, map[string]any{"reason": "unknown node"})
@@ -205,32 +259,183 @@ func (s *server) registerAgent(ctx context.Context, node string, data []byte) (p
 	if v, err := s.signer.Verify(token); err == nil {
 		exp = formatTime(v.ExpiresAt)
 	}
-	created, err := s.st.upsertAgent(ctx, &agentRow{
-		ID: agentID, Name: name, NodeName: node, SandboxID: req.GetSandboxId(), OwnerID: n.OwnerID,
-		Harness: req.GetHarness(), State: "running", CreatedAt: nowString(), TokenExpiresAt: exp,
+	resp := &mycelv1.RegisterAgentResponse{AgentId: agentID, Token: token, ExpiresAt: exp}
+	fx := &lifeFx{gate: gate}
+	err = s.withLife(ctx, fx, func() error {
+		return s.registerLocked(ctx, fx, node, n.OwnerID, agentID, &req, resp)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+// registerLocked checks and stores a registration and fills the reply's
+// state. Caller holds s.life.
+func (s *server) registerLocked(ctx context.Context, fx *lifeFx, node, ownerID, agentID string,
+	req *mycelv1.RegisterAgentRequest, resp *mycelv1.RegisterAgentResponse) error {
+	actor := "node:" + node
+	prev, err := s.st.getAgent(ctx, agentID)
+	if err != nil && !errors.Is(err, errNotFound) {
+		return s.internalError("get agent", err)
+	}
+	if err == nil && prev.RevokedAt == "" {
+		if err := s.checkReRegister(ctx, node, prev, req); err != nil {
+			return err
+		}
+	} else if err := s.checkSpawn(ctx, node, ownerID, agentID, req); err != nil {
+		return err
+	}
+	created, a, err := s.st.upsertAgent(ctx, &agentRow{
+		ID: agentID, Name: req.GetAgentName(), NodeName: node, SandboxID: req.GetSandboxId(), OwnerID: ownerID,
+		Harness: req.GetHarness(), State: stateRunning, CreatedAt: nowString(), TokenExpiresAt: resp.GetExpiresAt(),
+		Parent: req.GetParent(), HomeChannel: req.GetHomeChannel(),
+		BudgetTokens: req.GetBudget().GetTokens(), BudgetUSD: req.GetBudget().GetUsd(), Workdir: req.GetWorkdir(),
 	})
 	if errors.Is(err, errTokenSpent) {
 		s.audit(ctx, actor, "agent.register", agentID, outcomeDenied, map[string]any{"reason": "agent revoked"})
-		return nil, rpcErr(connect.CodePermissionDenied, "agent revoked; register under another name")
+		return rpcErr(connect.CodePermissionDenied, "agent revoked; register under another name")
 	}
 	if errors.Is(err, errTooManyAgents) {
 		s.audit(ctx, actor, "agent.register", agentID, outcomeError, map[string]any{"reason": "agent limit reached"})
-		return nil, rpcErr(connect.CodeResourceExhausted, "too many agents on this node")
+		return rpcErr(connect.CodeResourceExhausted, "too many agents on this node")
 	}
 	if err != nil {
 		s.log.Error("store agent", "err", err)
-		return nil, internalRPC()
+		return internalRPC()
 	}
-	s.audit(ctx, actor, "agent.register", agentID, outcomeOK,
-		map[string]any{"sandbox_id": req.GetSandboxId(), "harness": req.GetHarness(), "owner_id": n.OwnerID, "expires_at": exp})
+	if home := a.HomeChannel; created && home != "" {
+		// The worker can read its home channel at once (first registration
+		// only: a worker removed from it later is not re-added).
+		if _, err := s.st.getMember(ctx, home, agentID); errors.Is(err, errNotFound) {
+			if err := s.st.addMember(ctx, home, agentID, memberAgent); err != nil {
+				return s.internalError("add member", err)
+			}
+			s.audit(ctx, actor, "channel.join", "channel:"+home, outcomeOK, map[string]any{"member": agentID, "via": "home channel"})
+		} else if err != nil {
+			return s.internalError("get member", err)
+		}
+	}
+	s.audit(ctx, actor, "agent.register", agentID, outcomeOK, map[string]any{
+		"sandbox_id": req.GetSandboxId(), "harness": req.GetHarness(), "owner_id": ownerID, "expires_at": resp.GetExpiresAt(),
+		"parent": a.Parent, "home_channel": a.HomeChannel, "first_registration": created,
+		"budget_tokens": a.BudgetTokens, "budget_usd": a.BudgetUSD, "state": a.State, "paused_reason": a.PausedReason,
+	})
 	if created {
 		harness := req.GetHarness()
 		if harness == "" {
 			harness = "unknown"
 		}
-		s.alert(ctx, node, "agent %s registered on node %s (harness %s)", agentID, node, harness)
+		fx.post(func(ctx context.Context) {
+			s.alert(ctx, node, "agent %s registered on node %s (harness %s)", agentID, node, harness)
+		})
 	}
-	return &mycelv1.RegisterAgentResponse{AgentId: agentID, Token: token, ExpiresAt: exp}, nil
+	// A budget pause whose budget was lifted meanwhile ends; a fresh run
+	// whose budget is already exhausted is paused (the node hears it from
+	// the reply and from an AgentCtl sent after the reply).
+	if isBudgetReason(a.PausedReason) {
+		if err := s.autoResumeLocked(ctx, fx, hubActor.id, a, a.PausedReason); err != nil && !errors.Is(err, errBudgetExhausted) {
+			return err
+		}
+	}
+	if err := s.enforceLocked(ctx, fx, hubActor.id, a); err != nil {
+		return err
+	}
+	resp.State, resp.PausedReason, resp.FirstRegistration = a.State, a.PausedReason, created
+	return nil
+}
+
+// checkReRegister enforces what is fixed after the first registration: an
+// orchestrator (no parent) stays one, a worker keeps its parent, and the
+// home channel cannot change (an omitted home channel means unchanged).
+func (s *server) checkReRegister(ctx context.Context, node string, prev *agentRow, req *mycelv1.RegisterAgentRequest) error {
+	var reason string
+	switch {
+	case prev.Parent == "" && req.GetParent() != "":
+		reason = "agent exists as an orchestrator"
+	case prev.Parent != "" && req.GetParent() == "":
+		reason = "agent exists as a worker of " + prev.Parent
+	case req.GetParent() != prev.Parent:
+		reason = "parent is fixed after the first registration (" + prev.Parent + ")"
+	case req.GetHomeChannel() != "" && req.GetHomeChannel() != prev.HomeChannel:
+		reason = "home channel is fixed after the first registration"
+		if prev.HomeChannel != "" {
+			reason += " (" + prev.HomeChannel + ")"
+		}
+	default:
+		return nil
+	}
+	s.audit(ctx, "node:"+node, "agent.register", prev.ID, outcomeError, map[string]any{"reason": reason})
+	return rpcErr(connect.CodeFailedPrecondition, "%s", reason)
+}
+
+// checkSpawn validates a first registration: the parent is a live, running
+// agent of the same node, the home channel exists (not system, direct or
+// archived), the spawner (parent, or the node owner for an agent without
+// parent) is a member of it, and its budget is not exhausted.
+func (s *server) checkSpawn(ctx context.Context, node, ownerID, agentID string, req *mycelv1.RegisterAgentRequest) error {
+	actor := "node:" + node
+	refuse := func(code connect.Code, reason string) error {
+		s.audit(ctx, actor, "agent.register", agentID, outcomeError, map[string]any{"reason": reason})
+		return rpcErr(code, "%s", reason)
+	}
+	parent := req.GetParent()
+	if parent != "" {
+		if parent == agentID {
+			return refuse(connect.CodeInvalidArgument, "an agent cannot be its own parent")
+		}
+		p, err := s.st.getAgent(ctx, parent)
+		if err != nil && !errors.Is(err, errNotFound) {
+			return s.internalError("get parent", err)
+		}
+		if err != nil || p.NodeName != node || p.RevokedAt != "" || p.State == stateStopped {
+			return refuse(connect.CodeInvalidArgument, "parent must be a live agent on this node")
+		}
+		if p.State == statePaused {
+			return refuse(connect.CodeFailedPrecondition, "parent agent is paused ("+p.PausedReason+")")
+		}
+	}
+	home := req.GetHomeChannel()
+	if home == "" {
+		return nil
+	}
+	if !channels.ValidName(home) {
+		return refuse(connect.CodeInvalidArgument, "invalid home channel name")
+	}
+	ch, err := s.st.getChannel(ctx, home)
+	if errors.Is(err, errNotFound) {
+		return refuse(connect.CodeFailedPrecondition, "home channel "+home+" does not exist")
+	}
+	if err != nil {
+		return s.internalError("get channel", err)
+	}
+	switch {
+	case ch.ArchivedAt != "":
+		return refuse(connect.CodeFailedPrecondition, "home channel "+home+" is archived")
+	case ch.Type == mycelv1.ChannelType_CHANNEL_TYPE_SYSTEM:
+		return refuse(connect.CodeFailedPrecondition, "a system channel cannot be a home channel")
+	case ch.Type == mycelv1.ChannelType_CHANNEL_TYPE_DIRECT:
+		return refuse(connect.CodeFailedPrecondition, "a direct channel cannot be a home channel")
+	}
+	spawner := parent
+	if spawner == "" {
+		spawner = userMemberID(ownerID)
+	}
+	member, _, err := s.membership(ctx, ch, spawner)
+	if err != nil {
+		return s.internalError("membership", err)
+	}
+	if !member {
+		return refuse(connect.CodeFailedPrecondition, spawner+" is not a member of home channel "+home)
+	}
+	_, _, ex, err := s.channelBudget(ctx, home)
+	if err != nil {
+		return s.internalError("channel budget", err)
+	}
+	if ex {
+		return refuse(connect.CodeFailedPrecondition, "home channel "+home+" budget exhausted; raise it or reset usage")
+	}
+	return nil
 }
 
 // refreshAgent re-issues an agent token. A revoked agent's existing token
@@ -272,6 +477,10 @@ func (s *server) refreshAgent(ctx context.Context, node string, data []byte) (pr
 	}
 	if a.NodeName != node || a.SandboxID != claims.SandboxID {
 		return nil, deny(claims.AgentID, "agent binding changed")
+	}
+	if a.State == stateStopped {
+		s.audit(ctx, actor, "agent.refresh", claims.AgentID, outcomeDenied, map[string]any{"reason": "agent stopped"})
+		return nil, rpcErr(connect.CodePermissionDenied, "agent stopped")
 	}
 	token, err := s.signer.Issue(identity.AgentClaims{
 		AgentID: claims.AgentID, NodeName: node, SandboxID: claims.SandboxID, OwnerID: a.OwnerID,

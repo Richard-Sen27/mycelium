@@ -66,11 +66,22 @@ func (s *server) agentAuth(ctx context.Context, node, method string, call *mycel
 	if a.NodeName != node || a.SandboxID != claims.SandboxID {
 		return deny(claims.AgentID, "agent binding changed")
 	}
-	return actor{
+	if a.State == stateStopped {
+		s.auditDenied(ctx, "node:"+node, "agent.auth", claims.AgentID, map[string]any{"reason": "agent stopped", "method": method})
+		return actor{}, rpcErr(connect.CodePermissionDenied, "agent stopped")
+	}
+	out := actor{
 		id:     claims.AgentID,
 		p:      policy.Principal{Kind: policy.KindAgent, ID: claims.AgentID, OwnerID: claims.OwnerID},
 		origin: originAgent, node: node, sandbox: claims.SandboxID,
-	}, nil
+	}
+	if a.State == statePaused {
+		out.paused = a.PausedReason
+		if out.paused == "" {
+			out.paused = "paused"
+		}
+	}
+	return out, nil
 }
 
 // agentAllowed asks the policy about a non-channel-specific agent action.
@@ -150,6 +161,18 @@ func (s *server) serveAgentRPC(ctx context.Context, node, method string, data []
 	a, err := s.agentAuth(ctx, node, method, req.GetCall())
 	if err != nil {
 		return nil, err
+	}
+	// A paused agent may read but not act. Its inbox pull answers at once
+	// with no messages and the cursor unchanged, so a polling loop neither
+	// spins on the hub nor skips messages that arrive while it is paused.
+	if a.paused != "" {
+		switch r := req.(type) {
+		case *mycelv1.AgentPostRequest, *mycelv1.AgentBlackboardPutRequest, *mycelv1.AgentJoinChannelRequest:
+			s.auditDenied(ctx, a.id, method, a.id, map[string]any{"reason": "agent paused", "paused_reason": a.paused})
+			return nil, rpcErr(connect.CodeFailedPrecondition, "agent paused (%s)", a.paused)
+		case *mycelv1.InboxPullRequest:
+			return &mycelv1.InboxPullResponse{NextSeq: r.GetAfterSeq()}, nil
+		}
 	}
 	done, err := s.reserve(node, a, req, release)
 	if err != nil {

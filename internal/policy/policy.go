@@ -132,7 +132,7 @@ type Policy interface {
 //   - anything else is denied.
 func Default() Policy { return defaultPolicy{} }
 
-// knownActions is the phase 1 action set. Actions outside it are denied for
+// knownActions is the set of actions with a written rule. Actions outside it are denied for
 // everyone, admins included, so that a new action is never allowed by
 // accident before its rule is written.
 var knownActions = map[Action]bool{
@@ -161,6 +161,14 @@ var knownActions = map[Action]bool{
 	ActionChannelRead:         true,
 	ActionBlackboardRead:      true,
 	ActionBlackboardWrite:     true,
+
+	ActionAgentGet:          true,
+	ActionAgentSetBudget:    true,
+	ActionAgentPause:        true,
+	ActionAgentResume:       true,
+	ActionAgentStop:         true,
+	ActionChannelUsageGet:   true,
+	ActionChannelUsageReset: true,
 }
 
 // channelActions are the phase 2 actions agents may be considered for.
@@ -216,7 +224,8 @@ func (defaultPolicy) Authorize(_ context.Context, p Principal, a Action, r Resou
 	case ActionTokenCreate, ActionTokenList, ActionNodeList, ActionNodeGet,
 		ActionUserList, ActionAgentList:
 		return allow()
-	case ActionTokenRevoke, ActionNodeRemove, ActionNodeSetCaps, ActionAgentRevoke:
+	case ActionTokenRevoke, ActionNodeRemove, ActionNodeSetCaps, ActionAgentRevoke,
+		ActionAgentGet, ActionAgentSetBudget, ActionAgentPause, ActionAgentResume, ActionAgentStop:
 		if owns {
 			return allow()
 		}
@@ -233,7 +242,8 @@ func (defaultPolicy) Authorize(_ context.Context, p Principal, a Action, r Resou
 			return allow()
 		}
 		return deny("not a member of this channel")
-	case ActionChannelPolicyUpdate, ActionChannelMemberAdd, ActionChannelMemberRemove, ActionChannelArchive:
+	case ActionChannelPolicyUpdate, ActionChannelMemberAdd, ActionChannelMemberRemove, ActionChannelArchive,
+		ActionChannelUsageGet, ActionChannelUsageReset:
 		if owns {
 			return allow()
 		}

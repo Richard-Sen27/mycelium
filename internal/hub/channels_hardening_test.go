@@ -22,6 +22,7 @@ type chanEnv struct {
 	h                       *testHub
 	srv                     *server
 	aliceID, bobID          string
+	aliceKey, bobKey        string
 	adminCh, aliceCh, bobCh mycelv1connect.ChannelServiceClient
 	s1, s2                  *standIn
 	a1, a2                  *testAgent
@@ -44,6 +45,7 @@ func newChanEnv(t *testing.T) *chanEnv {
 		return mycelv1connect.NewChannelServiceClient(hc, h.ready.HubURL, connect.WithInterceptors(streamBearer(key)))
 	}
 	e.adminCh, e.aliceCh, e.bobCh = chans(h.init.AdminAPIKey), chans(aliceKey), chans(bobKey)
+	e.aliceKey, e.bobKey = aliceKey, bobKey
 	n1 := enrol(t, anon, createToken(t, h.clients(aliceKey, nil), "n1", nil, ""), "n1")
 	n2 := enrol(t, anon, createToken(t, h.clients(bobKey, nil), "n2", nil, ""), "n2")
 	e.s1, e.s2 = h.connectNode(t, n1), h.connectNode(t, n2)

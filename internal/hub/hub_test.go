@@ -209,6 +209,7 @@ func eventually(t *testing.T, d time.Duration, what string, cond func() bool) {
 type standIn struct {
 	nc      *nats.Conn
 	revoked atomic.Bool
+	silent  atomic.Bool // when set, ctl requests are received but never answered
 	ctl     chan *mycelv1.CtlRequest
 }
 
@@ -234,7 +235,7 @@ func (h *testHub) connectNode(t *testing.T, e *enrolled) *standIn {
 			default:
 			}
 		}
-		if m.Reply != "" {
+		if m.Reply != "" && !sn.silent.Load() {
 			b, _ := proto.Marshal(&mycelv1.CtlResponse{Ok: true})
 			_ = m.Respond(b)
 		}

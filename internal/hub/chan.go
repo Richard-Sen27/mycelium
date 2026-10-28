@@ -374,6 +374,7 @@ type actor struct {
 	origin  string
 	node    string
 	sandbox string
+	paused  string // agents: the pause reason while paused, else ""
 }
 
 func userActor(u *userRow) actor {
@@ -825,6 +826,19 @@ func (s *server) post(ctx context.Context, a actor, req *mycelv1.PostRequest) (*
 			return nil, deny("agents may not post in this channel")
 		case a.origin == originHuman && !pol.GetHumansMayPost():
 			return nil, deny("humans may not post in this channel")
+		}
+	}
+
+	// Agents may not post into a channel whose budget is exhausted, whatever
+	// their home channel (humans still may).
+	if a.origin == originAgent && !t.pending {
+		_, _, ex, err := s.channelBudget(ctx, ch.Name)
+		if err != nil {
+			return nil, s.internalError("channel budget", err)
+		}
+		if ex {
+			s.auditDenied(ctx, a.auditID(), string(policy.ActionChannelPost), "channel:"+ch.Name, map[string]any{"reason": "channel budget exhausted"})
+			return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("channel budget exhausted"))
 		}
 	}
 

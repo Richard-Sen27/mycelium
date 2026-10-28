@@ -147,9 +147,13 @@ func openStore(path string) (*store, error) {
 	// One connection serialises all access. The hub's write rate is tiny and
 	// this rules out SQLITE_BUSY on transaction upgrades.
 	db.SetMaxOpenConns(1)
-	if _, err := db.Exec(schema + channelSchema); err != nil {
+	if _, err := db.Exec(schema + channelSchema + lifecycleSchema); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("hub: apply schema: %w", err)
+	}
+	if err := migrateAgents(context.Background(), db); err != nil {
+		_ = db.Close()
+		return nil, err
 	}
 	if runtime.GOOS != "windows" {
 		if err := os.Chmod(path, 0o600); err != nil {
@@ -780,8 +784,8 @@ func (s *store) removeNode(ctx context.Context, name string) (*nodeRow, error) {
 		if err := arows.Close(); err != nil {
 			return err
 		}
-		if _, err := tx.ExecContext(ctx, `UPDATE agents SET revoked_at = COALESCE(revoked_at, ?), state = 'stopped'
-			WHERE node_name = ?`, revokedAt, name); err != nil {
+		if _, err := tx.ExecContext(ctx, `UPDATE agents SET revoked_at = COALESCE(revoked_at, ?), state = 'stopped',
+			paused_reason = '' WHERE node_name = ?`, revokedAt, name); err != nil {
 			return err
 		}
 		_, err = tx.ExecContext(ctx, `DELETE FROM nodes WHERE name = ?`, name)
@@ -855,26 +859,49 @@ type agentRow struct {
 	CreatedAt      string
 	TokenExpiresAt string
 	RevokedAt      string
+	// Phase 3.
+	Parent       string
+	HomeChannel  string
+	BudgetTokens int64
+	BudgetUSD    float64
+	UsedTokens   int64
+	UsedUSD      float64
+	Turns        int64
+	PausedReason string
+	ExitedAt     string
+	ExitCode     int64
+	Workdir      string
+	BudgetSetBy  string // "node" or "operator"
 }
 
-const agentCols = `id, name, node_name, sandbox_id, owner_id, harness, state, created_at, token_expires_at, revoked_at`
+const agentCols = `id, name, node_name, sandbox_id, owner_id, harness, state, created_at, token_expires_at, revoked_at,
+	parent, home_channel, budget_tokens, budget_usd, used_tokens, used_usd, turns, paused_reason, exited_at, exit_code, workdir,
+	budget_set_by`
 
 func scanAgent(sc interface{ Scan(...any) error }) (*agentRow, error) {
 	var (
-		a          agentRow
-		exp, revkd sql.NullString
+		a                  agentRow
+		exp, revkd, exited sql.NullString
 	)
 	if err := sc.Scan(&a.ID, &a.Name, &a.NodeName, &a.SandboxID, &a.OwnerID, &a.Harness, &a.State,
-		&a.CreatedAt, &exp, &revkd); err != nil {
+		&a.CreatedAt, &exp, &revkd, &a.Parent, &a.HomeChannel, &a.BudgetTokens, &a.BudgetUSD,
+		&a.UsedTokens, &a.UsedUSD, &a.Turns, &a.PausedReason, &exited, &a.ExitCode, &a.Workdir, &a.BudgetSetBy); err != nil {
 		return nil, err
 	}
 	a.TokenExpiresAt = exp.String
 	a.RevokedAt = revkd.String
+	a.ExitedAt = exited.String
 	return &a, nil
 }
 
 func (s *store) getAgent(ctx context.Context, id string) (*agentRow, error) {
-	a, err := scanAgent(s.db.QueryRowContext(ctx, `SELECT `+agentCols+` FROM agents WHERE id = ?`, id))
+	return getAgentQ(ctx, s.db, id)
+}
+
+func getAgentQ(ctx context.Context, q interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}, id string) (*agentRow, error) {
+	a, err := scanAgent(q.QueryRowContext(ctx, `SELECT `+agentCols+` FROM agents WHERE id = ?`, id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, errNotFound
 	}
@@ -882,38 +909,92 @@ func (s *store) getAgent(ctx context.Context, id string) (*agentRow, error) {
 }
 
 // upsertAgent registers an agent or re-registers an existing, unrevoked one.
-// A revoked agent id stays revoked.
-// It reports whether the agent was new.
-func (s *store) upsertAgent(ctx context.Context, a *agentRow) (bool, error) {
+// A revoked agent id stays revoked. A re-registration starts a new run
+// (exit fields cleared) and keeps the usage counters, the parent and the
+// home channel; a stored pause reason makes the agent paused again; the
+// stored budget stays unless the node asks for a stricter one. Only running
+// and paused agents count towards the per-node cap. It reports whether the
+// agent was new and returns the stored row.
+func (s *store) upsertAgent(ctx context.Context, a *agentRow) (bool, *agentRow, error) {
 	created := false
+	var out *agentRow
 	err := s.inTx(ctx, func(tx *sql.Tx) error {
-		var revoked sql.NullString
-		err := tx.QueryRowContext(ctx, `SELECT revoked_at FROM agents WHERE id = ?`, a.ID).Scan(&revoked)
-		switch {
-		case errors.Is(err, sql.ErrNoRows):
+		capCheck := func() error {
 			var count int
-			if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM agents WHERE node_name = ? AND revoked_at IS NULL`,
-				a.NodeName).Scan(&count); err != nil {
+			if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM agents WHERE node_name = ? AND revoked_at IS NULL
+				AND state IN ('running', 'paused')`, a.NodeName).Scan(&count); err != nil {
 				return err
 			}
 			if count >= maxAgentsPerNode {
 				return errTooManyAgents
 			}
-			_, err = tx.ExecContext(ctx, `INSERT INTO agents(`+agentCols+`) VALUES(?,?,?,?,?,?,?,?,?,NULL)`,
-				a.ID, a.Name, a.NodeName, a.SandboxID, a.OwnerID, a.Harness, a.State, a.CreatedAt, nullable(a.TokenExpiresAt))
-			created = err == nil
-			return err
+			return nil
+		}
+		prev, err := getAgentQ(ctx, tx, a.ID)
+		switch {
+		case errors.Is(err, errNotFound):
+			if err := capCheck(); err != nil {
+				return err
+			}
+			_, err = tx.ExecContext(ctx, `INSERT INTO agents(`+agentCols+`) VALUES(?,?,?,?,?,?,?,?,?,NULL,?,?,?,?,0,0,0,?,NULL,0,?,'node')`,
+				a.ID, a.Name, a.NodeName, a.SandboxID, a.OwnerID, a.Harness, a.State, a.CreatedAt, nullable(a.TokenExpiresAt),
+				a.Parent, a.HomeChannel, a.BudgetTokens, a.BudgetUSD, a.PausedReason, a.Workdir)
+			if err != nil {
+				return err
+			}
+			created = true
 		case err != nil:
 			return err
-		case revoked.Valid:
+		case prev.RevokedAt != "":
 			return errTokenSpent
+		default:
+			if prev.State == stateStopped {
+				if err := capCheck(); err != nil {
+					return err
+				}
+			}
+			state, reason := a.State, a.PausedReason
+			if prev.PausedReason != "" {
+				state, reason = statePaused, prev.PausedReason
+			}
+			bt, bu := stricterTokens(prev.BudgetTokens, a.BudgetTokens), stricterUSD(prev.BudgetUSD, a.BudgetUSD)
+			setBy := prev.BudgetSetBy
+			if bt != prev.BudgetTokens || bu != prev.BudgetUSD {
+				setBy = "node"
+			}
+			if _, err := tx.ExecContext(ctx, `UPDATE agents SET sandbox_id = ?, owner_id = ?, harness = ?, state = ?,
+				paused_reason = ?, token_expires_at = ?, budget_tokens = ?, budget_usd = ?, budget_set_by = ?, workdir = ?,
+				exited_at = NULL, exit_code = 0 WHERE id = ?`,
+				a.SandboxID, a.OwnerID, a.Harness, state, reason, nullable(a.TokenExpiresAt), bt, bu, setBy, a.Workdir, a.ID); err != nil {
+				return err
+			}
 		}
-		_, err = tx.ExecContext(ctx, `UPDATE agents SET sandbox_id = ?, owner_id = ?, harness = ?, state = ?,
-			token_expires_at = ? WHERE id = ?`,
-			a.SandboxID, a.OwnerID, a.Harness, a.State, nullable(a.TokenExpiresAt), a.ID)
+		out, err = getAgentQ(ctx, tx, a.ID)
 		return err
 	})
-	return created, err
+	return created, out, err
+}
+
+// stricterTokens is the stricter of two token ceilings (0 = none).
+func stricterTokens(old, req int64) int64 {
+	if req <= 0 {
+		return old
+	}
+	if old <= 0 {
+		return req
+	}
+	return min(old, req)
+}
+
+// stricterUSD is the stricter of two USD ceilings (0 = none).
+func stricterUSD(old, req float64) float64 {
+	if req <= 0 {
+		return old
+	}
+	if old <= 0 {
+		return req
+	}
+	return min(old, req)
 }
 
 func (s *store) setAgentTokenExpiry(ctx context.Context, id, exp string) error {
@@ -939,7 +1020,8 @@ func (s *store) listAgents(ctx context.Context) ([]*agentRow, error) {
 }
 
 func (s *store) revokeAgent(ctx context.Context, id string) error {
-	res, err := s.db.ExecContext(ctx, `UPDATE agents SET revoked_at = COALESCE(revoked_at, ?), state = 'stopped' WHERE id = ?`,
+	res, err := s.db.ExecContext(ctx, `UPDATE agents SET revoked_at = COALESCE(revoked_at, ?), state = 'stopped', paused_reason = ''
+		WHERE id = ?`,
 		nowString(), id)
 	if err != nil {
 		return err

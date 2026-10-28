@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"slices"
 	"strings"
 	"time"
@@ -46,7 +47,16 @@ func agentToProto(a *agentRow) *mycelv1.Agent {
 	return &mycelv1.Agent{
 		Id: a.ID, Name: a.Name, NodeName: a.NodeName, SandboxId: a.SandboxID, OwnerId: a.OwnerID,
 		Harness: a.Harness, State: a.State, CreatedAt: a.CreatedAt, TokenExpiresAt: a.TokenExpiresAt,
+		Parent: a.Parent, HomeChannel: a.HomeChannel,
+		Budget:       &mycelv1.Budget{Tokens: a.BudgetTokens, Usd: a.BudgetUSD},
+		Used:         &mycelv1.Budget{Tokens: a.UsedTokens, Usd: a.UsedUSD},
+		Turns:        clampInt32(a.Turns),
+		PausedReason: a.PausedReason, ExitedAt: a.ExitedAt, ExitCode: clampInt32(a.ExitCode),
 	}
+}
+
+func clampInt32(v int64) int32 {
+	return int32(max(min(v, math.MaxInt32), math.MinInt32))
 }
 
 func (s *server) nodeToProto(n *nodeRow, online bool) *mycelv1.Node {
@@ -275,7 +285,12 @@ func (n *nodeService) RemoveNode(ctx context.Context, req *connect.Request[mycel
 	if err := s.authorize(ctx, u, policy.ActionNodeRemove, policy.Resource{Kind: "node", ID: name, OwnerID: row.OwnerID}, true); err != nil {
 		return nil, err
 	}
-	if _, err := s.st.removeNode(ctx, name); err != nil {
+	// Under the lifecycle lock, so no pause or resume races the revocation
+	// of the node's agents.
+	s.life.Lock()
+	_, err = s.st.removeNode(ctx, name)
+	s.life.Unlock()
+	if err != nil {
 		if errors.Is(err, errNotFound) {
 			return nil, notFound("node")
 		}
@@ -476,13 +491,13 @@ func (us *userService) Whoami(ctx context.Context, _ *connect.Request[mycelv1.Wh
 
 // ---- AgentService ----
 
+// agentService implements mycelv1connect.AgentServiceHandler; the phase 3
+// methods are in agent_api.go.
 type agentService struct {
-	// Phase 3 methods (GetAgent, SetAgentBudget, PauseAgent, ResumeAgent,
-	// StopAgent, GetChannelUsage, ResetChannelUsage) answer Unimplemented
-	// until the phase 3 hub package lands.
-	mycelv1connect.UnimplementedAgentServiceHandler
 	s *server
 }
+
+var _ mycelv1connect.AgentServiceHandler = (*agentService)(nil)
 
 func (as *agentService) ListAgents(ctx context.Context, _ *connect.Request[mycelv1.ListAgentsRequest]) (*connect.Response[mycelv1.ListAgentsResponse], error) {
 	s := as.s
@@ -522,7 +537,10 @@ func (as *agentService) RevokeAgent(ctx context.Context, req *connect.Request[my
 		return nil, err
 	}
 	// Later phases also tear down the agent's sandbox here.
-	if err := s.st.revokeAgent(ctx, id); err != nil {
+	s.life.Lock()
+	err = s.st.revokeAgent(ctx, id)
+	s.life.Unlock()
+	if err != nil {
 		return nil, s.internalError("revoke agent", err)
 	}
 	res := id

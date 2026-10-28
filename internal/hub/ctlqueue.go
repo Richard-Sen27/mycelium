@@ -1,0 +1,137 @@
+package hub
+
+import (
+	"context"
+	"sync"
+	"time"
+
+	mycelv1 "github.com/richard-sen27/mycelium/gen/mycel/v1"
+)
+
+// Per-node control queues. Lifecycle decisions are taken under server.life,
+// but the 1 s control requests they cause are sent by one goroutine per
+// node, in the order they were queued, so a node that never answers delays
+// only its own control messages and never the hub's lifecycle lock.
+const (
+	maxCtlQueue = 1024            // queued control messages per node; more are dropped
+	ctlGateWait = 2 * time.Second // longest wait for a gated item (registration reply)
+)
+
+type ctlItem struct {
+	req *mycelv1.CtlRequest
+	// gate, when set, holds the item until it is closed: a pause decided
+	// during registration is sent only after the registration reply.
+	gate <-chan struct{}
+}
+
+type ctlQueues struct {
+	mu      sync.Mutex
+	q       map[string][]ctlItem
+	running map[string]bool
+}
+
+func newCtlQueues() *ctlQueues {
+	return &ctlQueues{q: map[string][]ctlItem{}, running: map[string]bool{}}
+}
+
+// enqueueCtl queues a control request for node and starts its sender if
+// needed. It never blocks.
+func (s *server) enqueueCtl(node string, it ctlItem) {
+	cq := s.ctlq
+	cq.mu.Lock()
+	defer cq.mu.Unlock()
+	if len(cq.q[node]) >= maxCtlQueue {
+		s.log.Warn("ctl queue full; control message dropped", "node", node)
+		return
+	}
+	cq.q[node] = append(cq.q[node], it)
+	if cq.running[node] {
+		return
+	}
+	c := s.ch
+	c.workMu.Lock()
+	if c.closing {
+		c.workMu.Unlock()
+		delete(cq.q, node)
+		return
+	}
+	c.work.Add(1)
+	c.workMu.Unlock()
+	cq.running[node] = true
+	go s.runCtlQueue(node)
+}
+
+// runCtlQueue sends node's queued control requests one at a time until the
+// queue is empty or the hub stops.
+func (s *server) runCtlQueue(node string) {
+	cq := s.ctlq
+	defer s.ch.work.Done()
+	for {
+		cq.mu.Lock()
+		items := cq.q[node]
+		select {
+		case <-s.ch.stop:
+			items = nil
+		default:
+		}
+		if len(items) == 0 {
+			delete(cq.q, node)
+			delete(cq.running, node)
+			cq.mu.Unlock()
+			return
+		}
+		it := items[0]
+		cq.q[node] = items[1:]
+		cq.mu.Unlock()
+		if it.gate != nil {
+			t := time.NewTimer(ctlGateWait)
+			select {
+			case <-it.gate:
+			case <-t.C:
+			case <-s.ch.stop:
+			}
+			t.Stop()
+		}
+		s.sendCtl(context.Background(), node, it.req, true)
+	}
+}
+
+// lifeFx collects the side effects of lifecycle decisions taken under
+// server.life: control messages (queued in order before the lock is
+// released) and EVENT posts (made after it is released).
+type lifeFx struct {
+	gate  <-chan struct{}
+	ctls  []nodeCtl
+	posts []func(context.Context)
+}
+
+type nodeCtl struct {
+	node string
+	req  *mycelv1.CtlRequest
+}
+
+// ctl records an AgentCtl for a's node.
+func (fx *lifeFx) ctl(a *agentRow, action, reason string) {
+	fx.ctls = append(fx.ctls, nodeCtl{node: a.NodeName, req: &mycelv1.CtlRequest{Cmd: &mycelv1.CtlRequest_Agent{
+		Agent: &mycelv1.AgentCtl{AgentId: a.ID, Action: action, Reason: reason},
+	}}})
+}
+
+// post records work to run after the lock is released.
+func (fx *lifeFx) post(f func(context.Context)) { fx.posts = append(fx.posts, f) }
+
+// withLife runs fn under server.life, queues the control messages it
+// decided before unlocking (so they leave in decision order), then runs the
+// posts. Effects are applied even when fn fails part-way.
+func (s *server) withLife(ctx context.Context, fx *lifeFx, fn func() error) error {
+	s.life.Lock()
+	err := fn()
+	for _, c := range fx.ctls {
+		s.enqueueCtl(c.node, ctlItem{req: c.req, gate: fx.gate})
+	}
+	s.life.Unlock()
+	for _, p := range fx.posts {
+		p(ctx)
+	}
+	return err
+}
