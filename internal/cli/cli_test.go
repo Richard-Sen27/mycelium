@@ -140,6 +140,7 @@ type testEnv struct {
 	hub   *fakeHub
 	ch    *fakeChannels
 	jobs  *fakeJobs
+	gr    *fakeGrants
 	home  string
 	caPEM string
 	fp    string
@@ -158,6 +159,9 @@ func newTestEnv(t *testing.T) *testEnv {
 	fj := newFakeJobs(fh)
 	mux.Handle(mycelv1connect.NewJobServiceHandler(fj))
 	mux.Handle(mycelv1connect.NewArtifactServiceHandler(fj))
+	fg := newFakeGrants(fh)
+	mux.Handle(mycelv1connect.NewGrantServiceHandler(fg))
+	mux.Handle(mycelv1connect.NewControlServiceHandler(fg))
 	mux.HandleFunc("PUT /api/artifacts", fj.putArtifact)
 	mux.HandleFunc("GET /api/artifacts/{id}", fj.getArtifactBytes)
 	var caPEM []byte
@@ -171,7 +175,7 @@ func newTestEnv(t *testing.T) *testEnv {
 	t.Setenv(config.EnvHome, home)
 	t.Setenv(EnvHubURL, "")
 	t.Setenv(EnvAPIKey, "")
-	return &testEnv{srv: srv, hub: fh, ch: fc, jobs: fj, home: home, caPEM: string(caPEM), fp: hex.EncodeToString(sum[:])}
+	return &testEnv{srv: srv, hub: fh, ch: fc, jobs: fj, gr: fg, home: home, caPEM: string(caPEM), fp: hex.EncodeToString(sum[:])}
 }
 
 // writeConfig points the CLI at the test server.

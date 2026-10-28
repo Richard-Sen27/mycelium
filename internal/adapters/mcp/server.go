@@ -142,6 +142,7 @@ func newServer(c *Client, session, agentID string, log *slog.Logger) *sdk.Server
 		Description: "Write a key on a channel's blackboard. With expect_version the write only succeeds if the entry is still at that version (0 = unconditional). Returns the stored entry's version."}, t.blackboardPut)
 	t.addWorkerTools(srv)
 	t.addJobTools(srv)
+	t.addGrantTools(srv)
 	return srv
 }
 

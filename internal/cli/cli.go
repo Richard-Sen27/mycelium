@@ -70,13 +70,14 @@
 //
 //	mycel grants ls [--pending] [--node n] [--subject s] [--all]
 //	mycel grants get <id>
-//	mycel grants request --kind ollama|gpu|docker-host|mount|egress --subject agent:… [--duration 2h] [--reason ..] [--model m]... [--device 0] [--exclusive] [--image i]... [--host-path p --guest-path g --ro] [--allow host]...
+//	mycel grants request --kind ollama|gpu|docker-host|mount|egress --subject agent:… [--duration 2h] [--reason ..] [--model m]... [--device 0] [--exclusive] [--image i]... [--host-path p --guest-path g [--rw]] [--allow host]...
 //	mycel approve <id> [--duration d] [--note n]      (alias: mycel grants approve)
 //	mycel deny <id> [--note n]
 //	mycel grants revoke <id>
 //	mycel freeze --agent id | --channel name | --all [--reason r]
 //	mycel unfreeze --agent id | --channel name | --all
 //	mycel freeze status
+//	                 freeze/unfreeze --json print {"frozen":true|false,"scope":"agent|channel|all","target":"<agent id>|#<channel>|network"}
 //	mycel nodes share <name> [--offer docker,ollama] [--when always|idle|schedule] [--window mon-fri=22:00-07:00]... [--local-first] [--max-jobs n] [--idle-after 10m]
 //	mycel node share ... (same flags; THIS machine, through the local API; tighten only)
 //	mycel node grants ls | revoke <id>  (this machine, local API)
@@ -289,6 +290,12 @@ func (a *app) rootCmd() *cobra.Command {
 		a.jobCmd(),
 		a.profilesCmd(),
 		a.artifactsCmd(),
+		a.grantsCmd(),
+		a.approveCmd(),
+		a.denyCmd(),
+		a.freezeCmd(),
+		a.unfreezeCmd(),
+		a.nodeCmd(),
 	)
 	for _, mk := range extraCommands {
 		root.AddCommand(mk(a))

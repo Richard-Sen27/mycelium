@@ -32,6 +32,8 @@ type hubClient struct {
 	// jobStream is the job service without an overall timeout, for StreamLogs.
 	jobStream mycelv1connect.JobServiceClient
 	arts      mycelv1connect.ArtifactServiceClient
+	grants    mycelv1connect.GrantServiceClient
+	control   mycelv1connect.ControlServiceClient
 	// raw carries artifact bytes over plain HTTPS (PUT/GET /api/artifacts):
 	// the pinned CA, no overall timeout; authz is its Authorization header.
 	raw   *http.Client
@@ -88,6 +90,8 @@ func newHubClient(hubURL, apiKey string, caPEM []byte) (*hubClient, error) {
 		jobs:      mycelv1connect.NewJobServiceClient(hc, base, opts),
 		jobStream: mycelv1connect.NewJobServiceClient(&sc, base, opts),
 		arts:      mycelv1connect.NewArtifactServiceClient(hc, base, opts),
+		grants:    mycelv1connect.NewGrantServiceClient(hc, base, opts),
+		control:   mycelv1connect.NewControlServiceClient(hc, base, opts),
 		raw:       &sc,
 		authz:     bearer{header: "Bearer " + apiKey},
 	}, nil

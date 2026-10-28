@@ -367,7 +367,8 @@ func TestToolDescriptions(t *testing.T) {
 	want := []string{"whoami", "list_agents", "list_channels", "join_channel", "leave_channel", "post",
 		"read_inbox", "wait_for_message", "read_messages", "blackboard_get", "blackboard_put",
 		"spawn_agent", "list_workers", "stop_agent",
-		"run_job", "get_job", "job_logs", "cancel_job", "list_artifacts", "export_artifact", "fetch_artifact"}
+		"run_job", "get_job", "job_logs", "cancel_job", "list_artifacts", "export_artifact", "fetch_artifact",
+		"request_grant", "list_grants"}
 	got := map[string]*sdk.Tool{}
 	for _, tl := range res.Tools {
 		got[tl.Name] = tl

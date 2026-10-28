@@ -12,8 +12,8 @@ import (
 )
 
 func (a *app) nodesCmd() *cobra.Command {
-	cmd := groupCmd("nodes", "List and manage enrolled nodes", "node")
-	cmd.AddCommand(a.nodesLsCmd(), a.nodesGetCmd(), a.nodesRmCmd(), a.nodesCapsCmd())
+	cmd := groupCmd("nodes", "List and manage enrolled nodes")
+	cmd.AddCommand(a.nodesLsCmd(), a.nodesGetCmd(), a.nodesRmCmd(), a.nodesCapsCmd(), a.nodesShareCmd())
 	return cmd
 }
 
