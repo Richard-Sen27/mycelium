@@ -57,6 +57,7 @@ Not covered yet:
 - On Windows, workers are placed in a Job Object so stop and shutdown kill the whole tree, but this path has not run on a Windows machine yet.
 - Child processes that detach from the worker's process group escape pause, stop and kill.
 - Stop ends the current run only; a stopped worker may be registered again by its node. Revoke is the lasting removal.
+- Any process of the node's OS user holds the local token and can read every broker credential of local agents; the local token is the same-user boundary, not a per-agent one.
 
 ## Phase 4
 

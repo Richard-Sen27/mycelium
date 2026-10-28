@@ -53,7 +53,7 @@ Open issues: none.
 
 ## Phase 4 — Sandboxes and jobs
 
-Status: done locally (all packages merged; 6 fake-backend acceptance tests green on macOS, the Lima isolation suite green on this Mac; Linux and Windows backends compile-checked only; the cross-machine Mac↔Windows run needs a second machine)
+Status: done locally (all packages merged; 6 fake-backend acceptance tests green on macOS, the Lima isolation suite green on this Mac (re-run on main after the fixes: pass in 159 s); Linux and Windows backends compile-checked only; the cross-machine Mac↔Windows run needs a second machine)
 
 | Package | Owns | Status | Notes |
 | --- | --- | --- | --- |
@@ -73,15 +73,15 @@ Open issues: the cross-platform acceptance needs a second machine; CI runners fo
 
 ## Phase 5 — Brokers, grants and approvals
 
-Status: in progress (round 1: hub grants, brokers, sharing, MCP/CLI)
+Status: in progress (merged: sharing, MCP/CLI, brokers; hub grants in review fixes; daemon in progress)
 
 | Package | Owns | Status | Notes |
 | --- | --- | --- | --- |
-| P5-hub-grants | `internal/hub`, `internal/policy` (grants, approvals, auto rules, sharing, freezes, approvals page, agent/node RPCs) | in progress | round 1 |
-| P5-brokers | `internal/broker/ollama`, `internal/broker/gpu`, `internal/broker/docker` | in progress | round 1 |
-| P5-sharing | `internal/sharing` (settings, effective computation, idle detectors per OS) | in progress | round 1 |
-| P5-mcp-cli | `internal/adapters/mcp`, `internal/cli` (request_grant, grants/approve/deny/freeze/share commands) | in progress | round 1 |
-| P5-daemon | `internal/daemon` (attach/detach, brokers lifecycle, ceiling enforcement, freeze, local controls, sandbox wiring of broker endpoints) | todo | round 2 |
+| P5-hub-grants | `internal/hub`, `internal/policy` (grants, approvals, auto rules, sharing, freezes, approvals page, agent/node RPCs) | review fixes | round 1 |
+| P5-brokers | `internal/broker/ollama`, `internal/broker/gpu`, `internal/broker/docker` | merged | round 1 |
+| P5-sharing | `internal/sharing` (settings, effective computation, idle detectors per OS) | merged | round 1 |
+| P5-mcp-cli | `internal/adapters/mcp`, `internal/cli` (request_grant, grants/approve/deny/freeze/share commands) | merged | round 1 |
+| P5-daemon | `internal/daemon` (attach/detach, brokers lifecycle, ceiling enforcement, freeze, local controls, sandbox wiring of broker endpoints) | in progress | round 2 |
 | P5-e2e | `test/**` | todo | round 3 |
 
 Acceptance (from spec): an agent requests a GPU, an admin approves it in the hub UI and the lease expires on its own; a locally tightened setting rejects a hub grant even while the hub is offline; freezing everything stops all sandboxes within 5 seconds.

@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -1046,5 +1047,48 @@ func TestColonIDsAndUnregisterTotals(t *testing.T) {
 	}
 	if in2, out2 := p.Unregister(id); in2 != 0 || out2 != 0 {
 		t.Fatalf("second Unregister returned %d/%d", in2, out2)
+	}
+}
+
+func TestAliasesReachBrokers(t *testing.T) {
+	var seenHost atomic.Value
+	broker := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seenHost.Store(r.Host)
+		_, _ = io.WriteString(w, "broker ok")
+	}))
+	defer broker.Close()
+	p, al := startProxy(t, 0)
+	pu := register(t, p, "sbx:alias") // no allowlist at all
+	if err := p.SetAliases("sbx:alias", map[string]string{"ollama.mycel.internal:80": broker.Listener.Addr().String()}); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.SetAliases("sbx:alias", map[string]string{"bad": "127.0.0.1:1"}); err == nil {
+		t.Fatal("alias without a port accepted")
+	}
+	if err := p.SetAliases("sbx:alias", map[string]string{"x.internal:80": "ollama.example:80"}); err == nil {
+		t.Fatal("non-literal alias target accepted")
+	}
+	client := &http.Client{Transport: &http.Transport{Proxy: http.ProxyURL(pu)}}
+	resp, err := client.Get("http://ollama.mycel.internal/api/tags")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if resp.StatusCode != 200 || string(body) != "broker ok" || seenHost.Load() != "ollama.mycel.internal" {
+		t.Fatalf("alias forward: %d %q host %v", resp.StatusCode, body, seenHost.Load())
+	}
+	rec := al.wait(t, func(r Record) bool { return r.Host == "ollama.mycel.internal" })
+	if !rec.Allowed || rec.Addr != broker.Listener.Addr().String() {
+		t.Fatalf("audit = %+v", rec)
+	}
+	// Other destinations are still refused without an allowlist.
+	resp2, err := client.Get("http://example.com/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp2.Body.Close()
+	if resp2.StatusCode != http.StatusForbidden {
+		t.Fatalf("non-alias destination: %d", resp2.StatusCode)
 	}
 }

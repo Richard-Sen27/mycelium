@@ -28,6 +28,7 @@ import (
 	"net/http"
 	"net/netip"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -126,6 +127,11 @@ type sandbox struct {
 	deny     bucket
 	bytesIn  int64 // accumulated from audit records
 	bytesOut int64
+	// aliases map "host:port" virtual destinations (lowercase host) to a
+	// literal "ip:port" the proxy dials directly, bypassing the allowlist and
+	// the forbidden-address check: this is how a sandbox reaches the node's
+	// brokers (ollama.mycel.internal:80 -> 127.0.0.1:<broker port>).
+	aliases map[string]string
 }
 
 // Options configures the proxy.
@@ -250,6 +256,36 @@ func (p *Proxy) Register(sandboxID string, allow []Rule) (proxyURL string, err e
 		Host:   p.ln.Addr().String(),
 	}
 	return u.String(), nil
+}
+
+// SetAliases replaces a sandbox's virtual destinations: keys are
+// "host:port" (a host name and an explicit port), values a literal
+// "ip:port" of a broker listener on this node. Requests to an alias skip the
+// allowlist and the forbidden-address check (loopback brokers are the
+// point) and are audited with the alias host and the dialled address.
+func (p *Proxy) SetAliases(sandboxID string, aliases map[string]string) error {
+	clean := make(map[string]string, len(aliases))
+	for k, v := range aliases {
+		host, port, ok := splitTarget(k, 0)
+		if !ok || port == 0 || checkHostname(host) != nil {
+			return fmt.Errorf("egress: invalid alias %q", k)
+		}
+		ap, err := netip.ParseAddrPort(v)
+		if err != nil {
+			return fmt.Errorf("egress: alias %q target %q: %w", k, v, err)
+		}
+		clean[net.JoinHostPort(host, strconv.Itoa(port))] = ap.String()
+	}
+	p.mu.Lock()
+	sb, ok := p.sandboxes[sandboxID]
+	if ok {
+		sb.aliases = clean
+	}
+	p.mu.Unlock()
+	if !ok {
+		return fmt.Errorf("egress: unknown sandbox %q", sandboxID)
+	}
+	return nil
 }
 
 // Update replaces a sandbox's allowlist (live grants). Live connections whose
@@ -378,8 +414,9 @@ func takeConns(sb *sandbox) []*liveConn {
 // liveConn is one tracked tunnel or forwarded request that Unregister,
 // Update and Close can tear down.
 type liveConn struct {
-	host string // normalised target host
-	port int
+	host  string // normalised target host
+	port  int
+	alias string // literal ip:port when the target is a sandbox alias
 
 	mu      sync.Mutex
 	closed  bool

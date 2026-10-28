@@ -132,11 +132,17 @@ func (p *Proxy) admit(w http.ResponseWriter, r *http.Request, host string, port 
 		return nil, nil, false
 	}
 	rec := Record{SandboxID: sb.id, Host: host, Port: port, Method: r.Method}
-	if !matchRules(rules, host, port) {
+	p.mu.Lock()
+	alias := sb.aliases[net.JoinHostPort(host, strconv.Itoa(port))]
+	p.mu.Unlock()
+	if alias == "" && !matchRules(rules, host, port) {
 		p.deny(w, rec, http.StatusForbidden, "destination not in the sandbox allowlist")
 		return nil, nil, false
 	}
 	lc, err := p.acquire(sb, host, port)
+	if err == nil {
+		lc.alias = alias
+	}
 	switch {
 	case errors.Is(err, errBusy):
 		p.deny(w, rec, http.StatusTooManyRequests, "too many connections for this sandbox")
@@ -193,7 +199,7 @@ func (p *Proxy) handleConnect(w http.ResponseWriter, r *http.Request) {
 
 	ctx, cancel := context.WithTimeout(r.Context(), dialTimeout)
 	lc.add(cancel)
-	upstream, err := p.dialChecked(ctx, host, port)
+	upstream, err := p.dialTarget(ctx, lc, host, port)
 	cancel()
 	if err != nil {
 		p.dialFailed(w, lc, rec, err)
@@ -257,6 +263,15 @@ func (p *Proxy) addrAllowed(a netip.Addr) bool {
 // dials. An IP literal reaches here only when a rule lists it literally,
 // which permits exactly that address; a name is refused if any resolved
 // address is refused.
+// dialTarget dials an alias target directly or the checked destination.
+func (p *Proxy) dialTarget(ctx context.Context, lc *liveConn, host string, port int) (net.Conn, error) {
+	if lc.alias != "" {
+		var d net.Dialer
+		return d.DialContext(ctx, "tcp", lc.alias)
+	}
+	return p.dialChecked(ctx, host, port)
+}
+
 func (p *Proxy) dialChecked(ctx context.Context, host string, port int) (net.Conn, error) {
 	var addrs []netip.Addr
 	if ip, err := netip.ParseAddr(host); err == nil {
@@ -487,7 +502,7 @@ func (p *Proxy) handleForward(w http.ResponseWriter, r *http.Request) {
 	lc.add(cancel)
 
 	dctx, dcancel := context.WithTimeout(ctx, dialTimeout)
-	conn, err := p.dialChecked(dctx, host, port)
+	conn, err := p.dialTarget(dctx, lc, host, port)
 	dcancel()
 	if err != nil {
 		p.dialFailed(w, lc, rec, err)
