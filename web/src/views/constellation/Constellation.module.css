@@ -1,0 +1,363 @@
+.page {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.frame {
+  flex: 1;
+  min-height: 420px;
+}
+.body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.meta {
+  display: flex;
+  gap: var(--s-6);
+  align-items: flex-start;
+}
+
+.stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--bg-0);
+}
+
+/* ---- The scene ---- */
+
+.scene {
+  position: absolute;
+  inset: 0;
+  outline: none;
+}
+.scene:focus-visible {
+  box-shadow: inset 0 0 0 1px var(--accent-dim);
+}
+.canvas {
+  position: absolute !important;
+  inset: 0;
+  touch-action: none;
+}
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+/* An object marker: a hit target centred on the body plus a hairline readout. */
+.obj {
+  --r: 7px;
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-1);
+  transform: translate3d(-9999px, -9999px, 0);
+  pointer-events: none;
+  cursor: pointer;
+  outline: none;
+}
+.obj:focus-visible {
+  box-shadow: none;
+}
+.hit {
+  position: absolute;
+  left: calc(-1 * var(--r));
+  top: calc(-1 * var(--r));
+  width: calc(2 * var(--r));
+  height: calc(2 * var(--r));
+  border-radius: 50%;
+  pointer-events: auto;
+}
+.obj[data-kind='agent'] {
+  --r: 7px;
+}
+.obj[data-kind='moon'] {
+  --r: 5px;
+}
+.obj[data-kind='channel'] {
+  --r: 10px;
+}
+.obj[data-kind='hub'] {
+  --r: 12px;
+}
+
+/* Selected or keyboard-focused: a square reticle in the accent. */
+.obj[data-selected] .hit,
+.obj:focus-visible .hit {
+  border-radius: 0;
+  outline: 1px solid var(--accent);
+  outline-offset: 4px;
+}
+
+.tag {
+  position: absolute;
+  left: calc(var(--r) + 10px);
+  top: 0;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  white-space: nowrap;
+  font-family: var(--font-data);
+  font-size: var(--text-xs);
+  letter-spacing: 0.04em;
+  line-height: 1;
+  pointer-events: auto;
+}
+/* A short leader from the body to the readout. */
+.tag::before {
+  content: '';
+  position: absolute;
+  left: -8px;
+  top: 50%;
+  width: 5px;
+  height: 1px;
+  background: var(--text-3);
+}
+.tagName {
+  color: var(--text-1);
+}
+.tagMeta {
+  color: var(--text-2);
+}
+.obj[data-kind='node'] .tagName {
+  color: var(--text-0);
+  font-size: var(--text-sm);
+}
+.obj[data-kind='node'][data-state='offline'] .tagName {
+  color: var(--text-2);
+}
+.obj[data-kind='hub'] .tagName {
+  color: var(--text-2);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-label);
+}
+.obj[data-kind='channel'] .tagName {
+  color: var(--text-2);
+}
+.obj[data-kind='agent'] .tagName {
+  color: var(--text-2);
+}
+.obj[data-kind='agent'][data-state='paused'] .tagName {
+  color: var(--warn);
+}
+/* Near the right edge the readout sits left of the body, leader on its right. */
+.obj[data-flip] .tag {
+  left: auto;
+  right: calc(var(--r) + 10px);
+  flex-direction: row-reverse;
+}
+.obj[data-flip] .tag::before {
+  left: auto;
+  right: -8px;
+}
+/* A readout that would collide with a more important one steps back; the
+ * body stays clickable and pointing at it brings the readout back. */
+.obj[data-tag-hidden]:not(:hover):not(:focus-visible):not([data-selected]) .tag {
+  visibility: hidden;
+}
+
+/* Agents carry no readout until pointed at, focused or selected. */
+.obj[data-kind='agent'] .tag {
+  opacity: 0;
+  transition: opacity var(--t-quick) linear;
+}
+.obj:hover .tag,
+.obj:focus-visible .tag,
+.obj[data-selected] .tag {
+  opacity: 1;
+}
+.obj:hover .tagName,
+.obj:focus-visible .tagName,
+.obj[data-selected] .tagName {
+  color: var(--accent);
+}
+
+/* ---- HUD around the map ---- */
+
+.loading {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-family: var(--font-data);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-label);
+  color: var(--text-2);
+}
+
+.empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+
+.lists a {
+  color: var(--accent);
+  text-decoration: none;
+}
+.lists a:hover {
+  text-decoration: underline;
+}
+
+.legend {
+  position: absolute;
+  left: var(--s-3);
+  bottom: var(--s-3);
+  min-width: 200px;
+  padding: var(--s-2) var(--s-3);
+  background: var(--bg-1);
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--r-1);
+  z-index: 2000;
+}
+.legend:not([data-open]) {
+  min-width: 0;
+}
+.legendToggle {
+  all: unset;
+  cursor: pointer;
+  font-family: var(--font-data);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-label);
+  color: var(--text-2);
+}
+.legendToggle:hover {
+  color: var(--text-0);
+}
+.legendToggle:focus-visible {
+  box-shadow: var(--focus-ring);
+}
+.legendList {
+  list-style: none;
+  margin: var(--s-2) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: var(--text-sm);
+  color: var(--text-1);
+}
+.legendList li {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+.glyph {
+  width: 24px;
+  height: 16px;
+  flex: none;
+  overflow: visible;
+}
+.gBody {
+  fill: var(--line-strong);
+}
+.gBodyOff {
+  fill: var(--line);
+}
+.gRingOn {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1;
+  opacity: 0.7;
+}
+.gRingOff {
+  fill: none;
+  stroke: var(--text-3);
+  stroke-width: 1;
+}
+.gOk {
+  fill: var(--accent);
+}
+.gWarn {
+  fill: var(--warn);
+}
+.gOff {
+  fill: var(--text-3);
+}
+.gMoon {
+  fill: var(--text-1);
+}
+.gGuide {
+  fill: none;
+  stroke: var(--line-strong);
+  stroke-width: 1;
+}
+.gChan {
+  fill: none;
+  stroke: var(--text-2);
+  stroke-width: 1;
+}
+.gLink {
+  stroke: var(--text-2);
+  stroke-width: 1;
+  opacity: 0.5;
+}
+.gParent {
+  stroke: var(--accent);
+  stroke-width: 1;
+  opacity: 0.6;
+}
+.gParticle {
+  fill: var(--accent-strong);
+}
+
+.controls {
+  position: absolute;
+  right: var(--s-3);
+  bottom: var(--s-3);
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  z-index: 2000;
+}
+.controls [aria-pressed='true'] {
+  color: var(--accent);
+}
+.hint {
+  font-family: var(--font-data);
+  font-size: var(--text-xs);
+  color: var(--text-2);
+  letter-spacing: 0.04em;
+}
+
+@media (max-width: 860px) {
+  .meta {
+    gap: var(--s-4);
+  }
+  .hint {
+    display: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .frame {
+    min-height: 0;
+  }
+  /* Phones: the map and the legend; the counts live in the lists. */
+  .meta,
+  .tagMeta {
+    display: none;
+  }
+  .legend {
+    min-width: 0;
+    max-width: calc(100% - 2 * var(--s-3) - 96px);
+  }
+}

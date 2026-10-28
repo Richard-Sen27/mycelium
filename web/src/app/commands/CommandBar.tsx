@@ -5,14 +5,19 @@ import { useNavigate } from 'react-router';
 import { Button, Kbd, toast } from '../../ds';
 import { agentsStore, grantsStore, nodesStore, useFreeze } from '../events/stores';
 import { useRights } from '../session';
+import type { SearchHit } from '../../gen/mycel/v1/ui_pb';
 import { orchestratorFor, sendToOrchestrator } from './core';
 import { searchCommands, useCommandSources, usePalette, type Command, type CommandContext } from './registry';
+import { groupHits, openHit, useServerSearch } from './search';
 import s from './CommandBar.module.css';
 
 type Row =
-  { type: 'command'; cmd: Command; positions: number[] } | { type: 'orchestrator'; text: string; agentName: string; agentId: string };
+  | { type: 'command'; cmd: Command; positions: number[] }
+  | { type: 'hit'; hit: SearchHit; group: string }
+  | { type: 'orchestrator'; text: string; agentName: string; agentId: string };
 
 const MAX_ROWS = 60;
+const MAX_COMMANDS_WITH_HITS = 8;
 
 /** CommandBar is the ⌘K / Ctrl+K palette. Mount it once inside the router. */
 export function CommandBar() {
@@ -59,6 +64,7 @@ function Palette({ ctx, initialQuery, close }: { ctx: CommandContext; initialQue
   const grants = grantsStore.use((st) => st.byId);
   const agents = agentsStore.use((st) => st.byId);
   const freeze = useFreeze((st) => st.status);
+  const search = useServerSearch(query);
 
   useEffect(() => {
     void nodesStore.ensure();
@@ -67,16 +73,22 @@ function Palette({ ctx, initialQuery, close }: { ctx: CommandContext; initialQue
   }, [ctx.rights.mode]);
 
   const rows: Row[] = useMemo(() => {
-    const ranked = searchCommands(query, ctx).slice(0, MAX_ROWS);
-    const out: Row[] = ranked.map((r) => ({ type: 'command', cmd: r.item, positions: r.match.positions }));
     const text = query.trim();
+    const hits = text && search.query === text ? search.hits : [];
+    // With server hits on screen, only the best few commands stay above them.
+    const ranked = searchCommands(query, ctx).slice(0, hits.length ? MAX_COMMANDS_WITH_HITS : MAX_ROWS);
+    const out: Row[] = ranked.map((r) => ({ type: 'command', cmd: r.item, positions: r.match.positions }));
     const words = text.split(/\s+/).filter(Boolean).length;
-    if (text && (out.length === 0 || words >= 3)) {
+    const noCommand = out.length === 0;
+    // Server search hits, grouped by kind, below the commands.
+    for (const g of groupHits(hits)) for (const hit of g.hits) out.push({ type: 'hit', hit, group: `Search · ${g.label}` });
+    // Free text for the orchestrator stays last.
+    if (text && (noCommand || words >= 3)) {
       const orch = orchestratorFor(ctx);
       if (orch) out.push({ type: 'orchestrator', text, agentName: orch.name, agentId: orch.id });
     }
     return out;
-  }, [query, ctx, sources, grants, agents, freeze]);
+  }, [query, ctx, sources, grants, agents, freeze, search]);
 
   useEffect(() => setActive(0), [query]);
 
@@ -88,6 +100,7 @@ function Palette({ ctx, initialQuery, close }: { ctx: CommandContext; initialQue
     setBusy(true);
     try {
       if (row.type === 'command') await row.cmd.run(ctx);
+      else if (row.type === 'hit') await openHit(row.hit, ctx.navigate);
       else {
         const orch = agentsStore.use.getState().byId[row.agentId];
         if (orch) await sendToOrchestrator(orch, row.text);
@@ -169,19 +182,24 @@ function Palette({ ctx, initialQuery, close }: { ctx: CommandContext; initialQue
         <Kbd keys={['esc']} className={s.kbd} />
       </div>
       <ul className={s.list} id={listId} role="listbox" aria-label="Commands">
+        {search.error && query.trim() && (
+          <li className={s.none} role="presentation" data-tone="alert">
+            Search failed: {search.error}
+          </li>
+        )}
         {rows.length === 0 && (
           <li className={s.none} role="presentation">
-            No command matches.
+            {search.loading ? 'Searching… ' : 'No command matches.'}
             {ctx.rights.mode === 'hub' && ' Free text goes to your orchestrator once one is registered.'}
           </li>
         )}
         {rows.map((row, i) => {
-          const group = row.type === 'command' ? row.cmd.group : 'Orchestrator';
+          const group = row.type === 'command' ? row.cmd.group : row.type === 'hit' ? row.group : 'Orchestrator';
           const heading = group !== lastGroup ? group : undefined;
           lastGroup = group;
           return (
             <PaletteRow
-              key={row.type === 'command' ? row.cmd.id : 'orchestrator'}
+              key={row.type === 'command' ? row.cmd.id : row.type === 'hit' ? `hit:${row.hit.kind}:${row.hit.id}` : 'orchestrator'}
               id={`${listId}-${i}`}
               heading={heading}
               active={i === active}
@@ -193,6 +211,11 @@ function Palette({ ctx, initialQuery, close }: { ctx: CommandContext; initialQue
                   <span className={s.title}>{highlight(row.cmd.title, row.positions)}</span>
                   {row.cmd.hint && <span className={s.hint}>{row.cmd.hint}</span>}
                   {row.cmd.shortcut && <Kbd keys={row.cmd.shortcut} className={s.kbd} />}
+                </>
+              ) : row.type === 'hit' ? (
+                <>
+                  <span className={s.title}>{row.hit.title || row.hit.id}</span>
+                  {row.hit.snippet && <span className={s.hint}>{row.hit.snippet}</span>}
                 </>
               ) : (
                 <>

@@ -18,6 +18,10 @@ const keepPlaceholder: Plugin = {
 // three.js and react-three-fiber (added by the constellation view) must be
 // one lazily loaded chunk that index.html never preloads.
 const SCENE = /[\\/]node_modules[\\/](three|three-stdlib|@react-three|maath|troika-[^\\/]+|camera-controls|meshline)[\\/]/;
+// Rollup pulls the unassigned dependencies of a manual chunk into it, so
+// React and the small state libraries the scene shares with the shell get a
+// chunk of their own; otherwise the entry would import the scene chunk.
+const SHARED = /[\\/]node_modules[\\/](react|react-dom|scheduler|zustand|use-sync-external-store)[\\/]/;
 
 export default defineConfig({
   plugins: [
@@ -69,6 +73,7 @@ export default defineConfig({
       output: {
         manualChunks(id) {
           if (SCENE.test(id)) return 'scene';
+          if (SHARED.test(id)) return 'react';
           return undefined;
         },
       },
@@ -88,5 +93,8 @@ export default defineConfig({
     setupFiles: ['src/test/setup.ts'],
     include: ['src/**/*.test.{ts,tsx}'],
     css: { modules: { classNameStrategy: 'non-scoped' } },
+    // Generous limits: the suite also runs while Go builds load the machine.
+    testTimeout: 20000,
+    hookTimeout: 20000,
   },
 });

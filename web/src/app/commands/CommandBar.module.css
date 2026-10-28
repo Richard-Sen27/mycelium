@@ -134,6 +134,10 @@
   color: var(--text-2);
   font-size: var(--text-sm);
 }
+.none[data-tone='alert'] {
+  padding: var(--s-2) var(--s-4);
+  color: var(--warn);
+}
 
 .footer {
   display: flex;

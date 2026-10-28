@@ -26,7 +26,11 @@ function signInAs(role: 'admin' | 'member') {
 }
 
 describe('app shell', () => {
-  beforeAll(() => registerCoreCommands());
+  beforeAll(async () => {
+    registerCoreCommands();
+    // Load the lazy route modules up front so no test waits on a cold import.
+    await Promise.all([import('../../views/nodes'), import('../../views/approvals'), import('../settings/Settings')]);
+  });
   afterEach(() => {
     useSession.setState({ status: 'booting', me: null, config: null, rights: anonymousRights });
     window.history.replaceState(null, '', '/');

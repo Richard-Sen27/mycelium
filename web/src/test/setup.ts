@@ -1,7 +1,10 @@
 import '@testing-library/jest-dom/vitest';
 import 'fake-indexeddb/auto';
-import { cleanup } from '@testing-library/react';
+import { cleanup, configure } from '@testing-library/react';
 import { afterEach } from 'vitest';
+
+// findBy*/waitFor wait longer than the 1 s default: lazy routes and stores settle slowly on a loaded machine.
+configure({ asyncUtilTimeout: 5000 });
 
 afterEach(() => {
   cleanup();

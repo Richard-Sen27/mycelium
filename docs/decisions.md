@@ -198,6 +198,12 @@ Each entry: context, choice, reason. Newest at the bottom. Items in the spec's
   - vitest 4.1.12, jsdom 27.4.0, @testing-library/react 16.3.3, @testing-library/user-event 14.6.8, @testing-library/jest-dom 6.9.1, fake-indexeddb 6.2.6 (dev): unit and render tests in Node without a browser.
   - prettier 3.9.10 (dev): formatting only; no ESLint, to keep the toolchain small.
   - Not added: motion (CSS transitions and keyframes driven by the duration tokens cover the shell), three.js / react-three-fiber (the constellation package adds them; vite.config.ts already routes them into the lazy `scene` chunk).
+- Libraries (P6-views-a):
+  - three 0.186.1: the WebGL renderer for the constellation (the fixed 3D base); OrbitControls comes from its own examples/jsm, so no controls package.
+  - @react-three/fiber 9.8.2: react-three-fiber, the fixed React binding for three.js (render loop with on-demand and paused frame loops, so reduced motion and hidden tabs cost nothing).
+  - @types/three 0.186.0 (dev): types for the above.
+  - Both live only in the lazily loaded `scene` chunk; vite.config.ts also gives React and zustand a chunk of their own, because Rollup otherwise pulls a manual chunk's shared dependencies into it and the entry would import the scene.
+  - Not added: @react-three/drei (labels are plain DOM buttons placed from the projected positions once per frame, which keeps them keyboard-focusable and styled by the design system; orbit controls come from three), any graph-layout library (the star map is a deterministic spiral and orbits, see web/src/views/constellation/layout.ts).
 
 ## D026 — Phase 7 design: reachability, moving the hub, install
 

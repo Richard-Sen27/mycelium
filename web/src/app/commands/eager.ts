@@ -4,6 +4,9 @@
 // light: stores, the API and registerCommands only, never view components.
 import { registerChannelCommands } from '../../views/channels/commands';
 import { registerJobCommands } from '../../views/jobs/commands';
+import { registerAgentCommands } from '../../views/agents/commands';
+import { registerGrantCommands } from '../../views/grants/commands';
+import { registerNodeCommands } from '../../views/nodes/commands';
 
 let done = false;
 
@@ -12,4 +15,7 @@ export function registerViewCommands(): void {
   done = true;
   registerChannelCommands();
   registerJobCommands();
+  registerNodeCommands();
+  registerAgentCommands();
+  registerGrantCommands();
 }
