@@ -48,7 +48,12 @@ func runMain(m *testing.M) int {
 		name += ".exe"
 	}
 	binPath = filepath.Join(dir, name)
-	build := exec.Command("go", "build", "-tags", "fakesandbox", "-o", binPath, "../../cmd/mycel") //nolint:gosec // test-built binary path
+	args := []string{"build", "-tags", "fakesandbox"}
+	if raceEnabled {
+		args = append(args, "-race")
+	}
+	args = append(args, "-o", binPath, "../../cmd/mycel")
+	build := exec.Command("go", args...) //nolint:gosec // test-built binary path
 	build.Stdout = os.Stdout
 	build.Stderr = os.Stderr
 	if err := build.Run(); err != nil {
@@ -58,22 +63,30 @@ func runMain(m *testing.M) int {
 	return m.Run()
 }
 
-// freePort asks the OS for a free TCP port on 127.0.0.1 and releases it.
-// There is a small race: another process may grab the port between Close and
-// the daemon binding it. On a test runner this is rare enough to accept; the
-// alternative (passing :0 and reading back bound addresses) would not let a
-// restarted hub keep the advertised URL.
-func freePort(t *testing.T) int {
+// freePorts asks the OS for n distinct free TCP ports on 127.0.0.1. Every
+// listener stays open until all n ports are chosen, then all are released.
+// There is a small race: another process may grab a port before the daemon
+// binds it. On a test runner this is rare enough to accept; the alternative
+// (passing :0 and reading back bound addresses) would not let a restarted
+// hub keep the advertised URL.
+func freePorts(t *testing.T, n int) []int {
 	t.Helper()
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("free port: %v", err)
+	ports := make([]int, 0, n)
+	ls := make([]net.Listener, 0, n)
+	defer func() {
+		for _, l := range ls {
+			_ = l.Close()
+		}
+	}()
+	for range n {
+		l, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatalf("free port: %v", err)
+		}
+		ls = append(ls, l)
+		ports = append(ports, l.Addr().(*net.TCPAddr).Port)
 	}
-	port := l.Addr().(*net.TCPAddr).Port
-	if err := l.Close(); err != nil {
-		t.Fatalf("free port: %v", err)
-	}
-	return port
+	return ports
 }
 
 // childEnv is the test process's environment without any MYCEL_* variables,
@@ -335,13 +348,14 @@ type daemonReady struct {
 func startHub(t *testing.T) *Hub {
 	t.Helper()
 	root := t.TempDir()
+	ports := freePorts(t, 3)
 	h := &Hub{
 		t:         t,
 		Root:      root,
 		Home:      filepath.Join(root, "hub"),
-		APIPort:   freePort(t),
-		BusPort:   freePort(t),
-		LocalPort: freePort(t),
+		APIPort:   ports[0],
+		BusPort:   ports[1],
+		LocalPort: ports[2],
 	}
 	api := "127.0.0.1:" + strconv.Itoa(h.APIPort)
 	out, errOut, code := runCLI(t, childEnv("MYCEL_HOME="+h.Home),
@@ -412,12 +426,13 @@ func (h *Hub) MustCLI(apiKey string, args ...string) string {
 
 // Node is a joined node running its own daemon.
 type Node struct {
-	t        *testing.T
-	Home     string
-	Name     string
-	LocalURL string
-	Token    string
-	Proc     *proc
+	t         *testing.T
+	Home      string
+	Name      string
+	LocalAddr string // host:port of the daemon's local API
+	LocalURL  string
+	Token     string
+	Proc      *proc
 }
 
 type tokenCreateOut struct {
@@ -466,13 +481,14 @@ func joinWithToken(t *testing.T, h *Hub, name, token string) *Node {
 	if code != 0 {
 		t.Fatalf("join %s: exit %d\nstdout: %s\nstderr: %s", name, code, out, errOut)
 	}
-	port := freePort(t)
+	port := freePorts(t, 1)[0]
 	n.Proc = startProc(t, name, h.Root, env, "daemon", "--json", "--local-addr", "127.0.0.1:"+strconv.Itoa(port))
 	var ready daemonReady
 	n.Proc.waitReady(t, 0, &ready)
 	if ready.Node == nil || ready.Node.LocalAddr == "" {
 		t.Fatalf("%s: ready line lacks node.local_addr: %+v", name, ready)
 	}
+	n.LocalAddr = ready.Node.LocalAddr
 	n.LocalURL = "http://" + ready.Node.LocalAddr
 	return n
 }

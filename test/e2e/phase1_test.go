@@ -3,12 +3,33 @@
 package e2e
 
 import (
+	"context"
+	"crypto"
+	"crypto/tls"
+	"crypto/x509"
+	"errors"
+	"fmt"
+	"io"
+	"log/slog"
+	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
+
+	"connectrpc.com/connect"
+	"gopkg.in/yaml.v3"
+
+	mycelv1 "github.com/richard-sen27/mycelium/gen/mycel/v1"
+	"github.com/richard-sen27/mycelium/gen/mycel/v1/mycelv1connect"
+	"github.com/richard-sen27/mycelium/internal/bus"
+	"github.com/richard-sen27/mycelium/internal/daemon"
+	"github.com/richard-sen27/mycelium/internal/identity"
 )
 
 // Phase 1 "Done when": a hub and two nodes join with tokens; a reused or
@@ -16,6 +37,9 @@ import (
 // `mycel nodes ls` shows both nodes with inventory.
 
 const exitRevoked = 3
+
+// invalidTokenMsg is the hub's one refusal for a reused, expired or tampered token.
+const invalidTokenMsg = "invalid or expired token" //nolint:gosec // an error message, not a credential
 
 func TestJoinTwoNodes(t *testing.T) {
 	h := startHub(t)
@@ -73,7 +97,7 @@ func TestJoinTwoNodes(t *testing.T) {
 	}
 
 	human := h.MustCLI("", "nodes", "ls")
-	for _, name := range []string{"hub-node", "alpha", "beta"} {
+	for _, name := range []string{"hub-node", "alpha", "beta", runtime.GOOS} {
 		if !strings.Contains(human, name) {
 			t.Errorf("nodes ls output lacks %q:\n%s", name, human)
 		}
@@ -89,8 +113,8 @@ func TestTokenReuseRefused(t *testing.T) {
 	if code != 1 {
 		t.Fatalf("reused token: exit %d, want 1\nstdout: %s\nstderr: %s", code, out, errOut)
 	}
-	if !strings.Contains(strings.ToLower(errOut), "token") {
-		t.Errorf("reused token: stderr does not mention the token: %q", errOut)
+	if !strings.Contains(errOut, invalidTokenMsg) {
+		t.Errorf("reused token: stderr lacks %q: %q", invalidTokenMsg, errOut)
 	}
 
 	out = h.MustCLI("", "nodes", "ls", "--json")
@@ -118,6 +142,9 @@ func TestTokenExpiredRefused(t *testing.T) {
 	if code != 1 {
 		t.Fatalf("expired token: exit %d, want 1\nstdout: %s\nstderr: %s", code, out, errOut)
 	}
+	if !strings.Contains(errOut, invalidTokenMsg) {
+		t.Errorf("expired token: stderr lacks %q: %q", invalidTokenMsg, errOut)
+	}
 
 	var found bool
 	for _, jt := range listTokens(t, h, "") {
@@ -140,18 +167,24 @@ func TestTamperedTokenRefused(t *testing.T) {
 	h := startHub(t)
 	tok := createToken(t, h, "", "--name", "delta2")
 
-	b := []byte(tok.Token)
-	i := len(b) / 2
-	if b[i] == 'A' {
-		b[i] = 'B'
-	} else {
-		b[i] = 'A'
+	// Flip one byte of the secret and re-encode, so the token still parses
+	// and only the hub's secret check can refuse it.
+	jt, err := identity.ParseJoinToken(tok.Token)
+	if err != nil {
+		t.Fatalf("parse token: %v", err)
 	}
-	tampered := string(b)
+	jt.Secret[0] ^= 0xff
+	tampered := jt.String()
+	if tampered == tok.Token {
+		t.Fatal("tampering did not change the token")
+	}
 
 	out, errOut, code := runCLI(t, childEnv("MYCEL_HOME="+filepath.Join(h.Root, "delta2")), "join", tampered, "--json")
 	if code != 1 {
 		t.Fatalf("tampered token: exit %d, want 1\nstdout: %s\nstderr: %s", code, out, errOut)
+	}
+	if !strings.Contains(errOut, invalidTokenMsg) {
+		t.Errorf("tampered token: stderr lacks %q: %q", invalidTokenMsg, errOut)
 	}
 	if _, ok := listNodes(t, h, "")["delta2"]; ok {
 		t.Errorf("node delta2 exists after a tampered-token join")
@@ -165,24 +198,127 @@ func TestRevokedNodeDisconnected(t *testing.T) {
 		t.Fatal("epsilon never came online")
 	}
 
-	h.MustCLI("", "nodes", "rm", "epsilon")
-	removed := time.Now()
-	code, ok := eps.Wait(5 * time.Second)
-	if !ok {
-		t.Fatalf("epsilon daemon still running 5s after nodes rm")
+	// Keep a copy of the identity: the daemon deletes it on revocation, and
+	// the hub must refuse it afterwards.
+	nodeDir := filepath.Join(eps.Home, "data", "node")
+	saved := t.TempDir()
+	for _, f := range []string{daemon.CertFile, daemon.KeyFile, daemon.CAFile, daemon.StateFile} {
+		b, err := os.ReadFile(filepath.Join(nodeDir, f)) //nolint:gosec // test temp dir
+		if err != nil {
+			t.Fatalf("copy %s: %v", f, err)
+		}
+		if err := os.WriteFile(filepath.Join(saved, f), b, 0o600); err != nil { //nolint:gosec // fixed file names in a test temp dir
+			t.Fatal(err)
+		}
 	}
-	t.Logf("epsilon daemon exited %s after nodes rm", time.Since(removed).Round(time.Millisecond))
+
+	const budget = 5 * time.Second
+	start := time.Now()
+	h.MustCLI("", "nodes", "rm", "epsilon")
+	code, ok := eps.Wait(budget - time.Since(start))
+	if !ok {
+		t.Fatalf("epsilon daemon still running %s after nodes rm", budget)
+	}
+	t.Logf("epsilon daemon exited %s after nodes rm started", time.Since(start).Round(time.Millisecond))
 	if code != exitRevoked {
 		t.Errorf("epsilon daemon exit code %d, want %d", code, exitRevoked)
 	}
-	if _, err := os.Stat(filepath.Join(eps.Home, "data", "node", "node.key")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(nodeDir, daemon.KeyFile)); !os.IsNotExist(err) {
 		t.Errorf("node.key still present after revocation (stat err: %v)", err)
+	}
+
+	assertHubRefusesIdentity(t, h, saved)
+	if el := time.Since(start); el > budget {
+		t.Errorf("revocation took %s (daemon exit plus hub refusal), budget %s", el.Round(time.Millisecond), budget)
+	} else {
+		t.Logf("revocation fully enforced %s after nodes rm started", el.Round(time.Millisecond))
 	}
 	if _, ok := listNodes(t, h, "")["epsilon"]; ok {
 		t.Errorf("nodes ls still lists epsilon")
 	}
 	if strings.Contains(readFile(h.Proc.stderrPath), eps.Token) {
 		t.Errorf("hub log contains the join token")
+	}
+}
+
+// assertHubRefusesIdentity proves the hub refuses a revoked node's saved
+// certificate on the bus and for renewal. Both checks run concurrently.
+func assertHubRefusesIdentity(t *testing.T, h *Hub, dir string) {
+	t.Helper()
+	read := func(f string) []byte {
+		b, err := os.ReadFile(filepath.Join(dir, f)) //nolint:gosec // test temp dir
+		if err != nil {
+			t.Fatal(err)
+		}
+		return b
+	}
+	cert, err := tls.X509KeyPair(read(daemon.CertFile), read(daemon.KeyFile))
+	if err != nil {
+		t.Fatalf("saved key pair: %v", err)
+	}
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM(read(daemon.CAFile)) {
+		t.Fatal("saved ca.crt holds no certificate")
+	}
+	var st daemon.State
+	if err := yaml.Unmarshal(read(daemon.StateFile), &st); err != nil {
+		t.Fatalf("saved node.yaml: %v", err)
+	}
+
+	var wg sync.WaitGroup
+	var busErr, renewErr error
+	var revoked atomic.Bool
+	wg.Go(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		nc, err := bus.Connect(ctx, bus.ClientConfig{
+			URL: st.BusURL, NodeName: st.Name, Cert: cert, RootCAs: pool,
+			Logger:        slog.New(slog.NewTextHandler(io.Discard, nil)),
+			OnAuthRevoked: func() { revoked.Store(true) },
+		})
+		if err == nil {
+			// Connected: the refusal must still arrive within the context.
+			defer nc.Close()
+			for ctx.Err() == nil && !revoked.Load() {
+				time.Sleep(50 * time.Millisecond)
+			}
+			if !revoked.Load() {
+				busErr = errors.New("bus accepted the revoked certificate")
+			}
+		}
+	})
+	wg.Go(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		key, ok := cert.PrivateKey.(crypto.Signer)
+		if !ok {
+			renewErr = errors.New("saved key is not a signer")
+			return
+		}
+		csr, err := identity.NewCSR(key, st.Name)
+		if err != nil {
+			renewErr = err
+			return
+		}
+		tr := &http.Transport{TLSClientConfig: &tls.Config{
+			RootCAs: pool, Certificates: []tls.Certificate{cert}, MinVersion: tls.VersionTLS12,
+		}, ForceAttemptHTTP2: true}
+		defer tr.CloseIdleConnections()
+		client := mycelv1connect.NewEnrolServiceClient(&http.Client{Transport: tr}, h.HubURL)
+		_, err = client.Renew(ctx, connect.NewRequest(&mycelv1.RenewRequest{CsrDer: csr}))
+		switch {
+		case err == nil:
+			renewErr = errors.New("hub renewed a revoked node's certificate")
+		case connect.CodeOf(err) != connect.CodePermissionDenied:
+			renewErr = fmt.Errorf("renew with a revoked certificate: %w; want permission denied", err)
+		}
+	})
+	wg.Wait()
+	if busErr != nil {
+		t.Error(busErr)
+	}
+	if renewErr != nil {
+		t.Error(renewErr)
 	}
 }
 
