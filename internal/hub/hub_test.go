@@ -13,6 +13,7 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -54,14 +55,28 @@ type testHub struct {
 	pool  *x509.CertPool
 }
 
-func startTestHub(t *testing.T) *testHub {
+func startTestHub(t *testing.T) *testHub { t.Helper(); return startTestHubWith(t, false) }
+
+// startTestHubWith starts a hub; allowFake offers the fake sandbox profile.
+func startTestHubWith(t *testing.T, allowFake bool) *testHub {
 	t.Helper()
 	opts, res := initTestHub(t)
+	h, _ := runTestHub(t, opts, res, allowFake)
+	return h
+}
+
+// runTestHub runs the hub initialised in opts until stop is called or the
+// test ends (stop may be called more than once).
+func runTestHub(t *testing.T, opts InitOptions, res *InitResult, allowFake bool) (*testHub, func()) {
+	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	readyCh := make(chan Ready, 1)
 	done := make(chan error, 1)
 	go func() {
-		done <- Run(ctx, Options{HubDir: opts.HubDir, APIListen: "127.0.0.1:0", BusListen: "127.0.0.1:0", Logger: quietLogger()}, readyCh)
+		done <- Run(ctx, Options{
+			HubDir: opts.HubDir, APIListen: "127.0.0.1:0", BusListen: "127.0.0.1:0", Logger: quietLogger(),
+			AllowFakeProfile: allowFake,
+		}, readyCh)
 	}()
 	var ready Ready
 	select {
@@ -73,22 +88,26 @@ func startTestHub(t *testing.T) *testHub {
 		cancel()
 		t.Fatal("hub not ready")
 	}
-	t.Cleanup(func() {
-		cancel()
-		select {
-		case err := <-done:
-			if err != nil {
-				t.Errorf("Run: %v", err)
+	var once sync.Once
+	stop := func() {
+		once.Do(func() {
+			cancel()
+			select {
+			case err := <-done:
+				if err != nil {
+					t.Errorf("Run: %v", err)
+				}
+			case <-time.After(15 * time.Second):
+				t.Error("Run did not return")
 			}
-		case <-time.After(15 * time.Second):
-			t.Error("Run did not return")
-		}
-	})
+		})
+	}
+	t.Cleanup(stop)
 	pool := x509.NewCertPool()
 	if !pool.AppendCertsFromPEM(res.CACertPEM) {
 		t.Fatal("bad CA PEM")
 	}
-	return &testHub{opts: opts, init: res, ready: ready, pool: pool}
+	return &testHub{opts: opts, init: res, ready: ready, pool: pool}, stop
 }
 
 func (h *testHub) httpClient(cert *tls.Certificate) *http.Client {
@@ -209,7 +228,8 @@ func eventually(t *testing.T, d time.Duration, what string, cond func() bool) {
 type standIn struct {
 	nc      *nats.Conn
 	revoked atomic.Bool
-	silent  atomic.Bool // when set, ctl requests are received but never answered
+	silent  atomic.Bool  // when set, ctl requests are received but never answered
+	refuse  atomic.Value // string: when non-empty, CreateSandbox is refused with it
 	ctl     chan *mycelv1.CtlRequest
 }
 
@@ -236,7 +256,11 @@ func (h *testHub) connectNode(t *testing.T, e *enrolled) *standIn {
 			}
 		}
 		if m.Reply != "" && !sn.silent.Load() {
-			b, _ := proto.Marshal(&mycelv1.CtlResponse{Ok: true})
+			resp := &mycelv1.CtlResponse{Ok: true}
+			if why, _ := sn.refuse.Load().(string); why != "" && req.GetCreateSandbox() != nil {
+				resp = &mycelv1.CtlResponse{Error: why}
+			}
+			b, _ := proto.Marshal(resp)
 			_ = m.Respond(b)
 		}
 	}); err != nil {

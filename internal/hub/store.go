@@ -147,11 +147,15 @@ func openStore(path string) (*store, error) {
 	// One connection serialises all access. The hub's write rate is tiny and
 	// this rules out SQLITE_BUSY on transaction upgrades.
 	db.SetMaxOpenConns(1)
-	if _, err := db.Exec(schema + channelSchema + lifecycleSchema); err != nil {
+	if _, err := db.Exec(schema + channelSchema + lifecycleSchema + jobSchema); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("hub: apply schema: %w", err)
 	}
 	if err := migrateAgents(context.Background(), db); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	if err := migrateNodes(context.Background(), db); err != nil {
 		_ = db.Close()
 		return nil, err
 	}
@@ -633,6 +637,11 @@ func insertNodeTx(ctx context.Context, tx *sql.Tx, n *nodeRow) error {
 	if err != nil {
 		return err
 	}
+	// A fresh incarnation: jobs assigned to an earlier node of this name
+	// never match it (see jobForNode).
+	if _, err := tx.ExecContext(ctx, `UPDATE nodes SET incarnation = ? WHERE name = ?`, newIncarnation(), n.Name); err != nil {
+		return err
+	}
 	return recordCertTx(ctx, tx, n.Name, n.SPIFFEID, n.CertSerial, n.CertNotAfter)
 }
 
@@ -721,13 +730,14 @@ func (s *store) listNodes(ctx context.Context) ([]*nodeRow, error) {
 	return out, rows.Err()
 }
 
-// removeNode deletes the node and its agents and revokes every certificate
-// ever issued to it that has not expired yet.
-func (s *store) removeNode(ctx context.Context, name string) (*nodeRow, error) {
+// removeNode deletes the node and its agents, revokes every certificate
+// ever issued to it that has not expired yet, and fails its jobs (assigned
+// ones and queued ones pinned to it); it returns the failed job ids.
+func (s *store) removeNode(ctx context.Context, name string) (*nodeRow, []string, error) {
 	s.seqMu.Lock()
 	defer s.seqMu.Unlock()
 	var n *nodeRow
-	var serials, agents []string
+	var serials, agents, jobs []string
 	now := time.Now()
 	err := s.inTx(ctx, func(tx *sql.Tx) error {
 		var err error
@@ -788,11 +798,14 @@ func (s *store) removeNode(ctx context.Context, name string) (*nodeRow, error) {
 			paused_reason = '' WHERE node_name = ?`, revokedAt, name); err != nil {
 			return err
 		}
+		if jobs, err = failNodeJobsTx(ctx, tx, name, "node removed"); err != nil {
+			return err
+		}
 		_, err = tx.ExecContext(ctx, `DELETE FROM nodes WHERE name = ?`, name)
 		return err
 	})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	s.mu.Lock()
 	for _, serial := range serials {
@@ -803,7 +816,7 @@ func (s *store) removeNode(ctx context.Context, name string) (*nodeRow, error) {
 		s.revAgents[id] = true
 	}
 	s.mu.Unlock()
-	return n, nil
+	return n, jobs, nil
 }
 
 func (s *store) setNodeCaps(ctx context.Context, name string, caps []string) error {

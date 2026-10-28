@@ -41,6 +41,7 @@ type Principal struct {
 	Member bool
 	// Creator is set by the caller for channel actions: the principal
 	// created the channel in Resource (agents creating task channels).
+	// For artifact actions of agents: the agent made the artifact.
 	Creator bool
 }
 
@@ -144,11 +145,16 @@ type Policy interface {
 //     usage of channels they own; agents nothing (spawning and stopping
 //     one's own workers happens on the node, not through this interface);
 //   - jobs and artifacts (phase 4): admins everything; members and their
-//     agents may run jobs (the submitter's owner becomes the job owner),
-//     get, cancel and read logs of jobs they own, list their own jobs, put
-//     artifacts, and get or delete artifacts they own or that are attached
-//     to a channel they may read (Principal.Member); profiles are listed by
-//     everyone and set by admins only;
+//     agents may run jobs (the submitter's owner becomes the job owner:
+//     Resource.OwnerID must be the member, or the agent's owner), get,
+//     cancel and read logs of jobs they own (an agent: jobs of its owner),
+//     list their own jobs (the caller filters) and put artifacts. Members
+//     get artifacts they own or that are attached to a channel they may
+//     read (Principal.Member) and delete artifacts they own. Agents get
+//     artifacts attached to a channel they are a member of (Member) or
+//     that they made (Principal.Creator: created by the agent or produced
+//     by a job it submitted), and delete only those they made. Profiles
+//     are listed by users and agents and set by admins only;
 //   - anything else is denied.
 func Default() Policy { return defaultPolicy{} }
 
@@ -189,6 +195,34 @@ var knownActions = map[Action]bool{
 	ActionAgentStop:         true,
 	ActionChannelUsageGet:   true,
 	ActionChannelUsageReset: true,
+
+	ActionJobRun:         true,
+	ActionJobGet:         true,
+	ActionJobList:        true,
+	ActionJobCancel:      true,
+	ActionJobLogs:        true,
+	ActionArtifactList:   true,
+	ActionArtifactGet:    true,
+	ActionArtifactPut:    true,
+	ActionArtifactDelete: true,
+	ActionProfileList:    true,
+	ActionProfileSet:     true,
+}
+
+// jobActions are the phase 4 actions, decided by authorizeJob for members
+// and agents.
+var jobActions = map[Action]bool{
+	ActionJobRun:         true,
+	ActionJobGet:         true,
+	ActionJobList:        true,
+	ActionJobCancel:      true,
+	ActionJobLogs:        true,
+	ActionArtifactList:   true,
+	ActionArtifactGet:    true,
+	ActionArtifactPut:    true,
+	ActionArtifactDelete: true,
+	ActionProfileList:    true,
+	ActionProfileSet:     true,
 }
 
 // channelActions are the phase 2 actions agents may be considered for.
@@ -229,6 +263,12 @@ func (defaultPolicy) Authorize(_ context.Context, p Principal, a Action, r Resou
 	if p.Kind == KindAgent && p.ID != "" && (channelActions[a] || a == ActionAgentList) {
 		return authorizeAgentChannel(p, a, r)
 	}
+	if p.Kind == KindAgent && p.ID != "" && jobActions[a] {
+		if p.OwnerID == "" {
+			return deny("agent without owner")
+		}
+		return authorizeJob(p.OwnerID, p, a, r)
+	}
 	if p.Kind != KindUser || p.ID == "" {
 		return deny("only users may perform this action")
 	}
@@ -268,6 +308,46 @@ func (defaultPolicy) Authorize(_ context.Context, p Principal, a Action, r Resou
 			return allow()
 		}
 		return deny("only the channel owner or an admin may do this")
+	}
+	if jobActions[a] {
+		return authorizeJob(p.ID, p, a, r)
+	}
+	return deny("admin role required")
+}
+
+// authorizeJob applies the phase 4 rules to a member (owner = the member)
+// or an agent (owner = the agent's owner).
+func authorizeJob(owner string, p Principal, a Action, r Resource) Decision {
+	owns := r.OwnerID != "" && r.OwnerID == owner
+	switch a {
+	case ActionJobRun:
+		if owns {
+			return allow()
+		}
+		return deny("jobs are owned by the submitter's owner")
+	case ActionJobList, ActionArtifactList, ActionArtifactPut, ActionProfileList:
+		return allow()
+	case ActionJobGet, ActionJobCancel, ActionJobLogs:
+		if owns {
+			return allow()
+		}
+		return deny("only the job's owner or an admin may do this")
+	case ActionArtifactGet:
+		if p.Kind == KindAgent {
+			owns = p.Creator
+		}
+		if owns || p.Member {
+			return allow()
+		}
+		return deny("artifact is not visible to you")
+	case ActionArtifactDelete:
+		if p.Kind == KindAgent {
+			owns = p.Creator
+		}
+		if owns {
+			return allow()
+		}
+		return deny("only the artifact's owner or an admin may delete it")
 	default:
 		return deny("admin role required")
 	}

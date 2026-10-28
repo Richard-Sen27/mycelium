@@ -20,6 +20,8 @@ var agentMethods = map[string]bool{
 	bus.RPCAgentListChannels: true, bus.RPCAgentListAgents: true, bus.RPCAgentWhoami: true,
 	bus.RPCAgentInboxPull: true, bus.RPCAgentBBGet: true, bus.RPCAgentBBPut: true,
 	bus.RPCAgentListMessages: true,
+	bus.RPCAgentJobRun:       true, bus.RPCAgentJobGet: true, bus.RPCAgentJobCancel: true, bus.RPCAgentJobLogs: true,
+	bus.RPCAgentArtifactList: true,
 }
 
 // maxSubTags bounds the tags of a subscription filter.
@@ -99,7 +101,7 @@ func (s *server) agentAllowed(ctx context.Context, a actor, action policy.Action
 // returned function frees what was taken.
 func (s *server) reserve(node string, a actor, req agentRequest, release func()) (func(), error) {
 	c := s.ch
-	if r, ok := req.(*mycelv1.InboxPullRequest); ok && inboxWait(r) > 0 {
+	if isLongPoll(req) {
 		if !c.acquire(c.agentPolls, a.id, maxPullsPerAgent) {
 			return nil, rpcErr(connect.CodeResourceExhausted, "too many concurrent inbox pulls for this agent (max %d)", maxPullsPerAgent)
 		}
@@ -127,6 +129,18 @@ func (s *server) reserve(node string, a actor, req agentRequest, release func())
 	return func() { c.release(c.nodeRPCs, node) }, nil
 }
 
+// isLongPoll reports whether req waits (inbox pull or job log poll with a
+// wait).
+func isLongPoll(req agentRequest) bool {
+	switch r := req.(type) {
+	case *mycelv1.InboxPullRequest:
+		return inboxWait(r) > 0
+	case *mycelv1.AgentJobLogsRequest:
+		return r.GetWaitMs() > 0
+	}
+	return false
+}
+
 // serveAgentRPC decodes, authenticates and serves one agent RPC. release
 // gives back the hub-wide RPC slot the call runs in.
 func (s *server) serveAgentRPC(ctx context.Context, node, method string, data []byte, release func()) (proto.Message, error) {
@@ -152,6 +166,16 @@ func (s *server) serveAgentRPC(ctx context.Context, node, method string, data []
 		req = &mycelv1.AgentBlackboardPutRequest{}
 	case bus.RPCAgentListMessages:
 		req = &mycelv1.AgentListMessagesRequest{}
+	case bus.RPCAgentJobRun:
+		req = &mycelv1.AgentRunJobRequest{}
+	case bus.RPCAgentJobGet:
+		req = &mycelv1.AgentGetJobRequest{}
+	case bus.RPCAgentJobCancel:
+		req = &mycelv1.AgentCancelJobRequest{}
+	case bus.RPCAgentJobLogs:
+		req = &mycelv1.AgentJobLogsRequest{}
+	case bus.RPCAgentArtifactList:
+		req = &mycelv1.AgentListArtifactsRequest{}
 	default:
 		return nil, rpcErr(connect.CodeNotFound, "unknown method %s", method)
 	}
@@ -167,7 +191,8 @@ func (s *server) serveAgentRPC(ctx context.Context, node, method string, data []
 	// spins on the hub nor skips messages that arrive while it is paused.
 	if a.paused != "" {
 		switch r := req.(type) {
-		case *mycelv1.AgentPostRequest, *mycelv1.AgentBlackboardPutRequest, *mycelv1.AgentJoinChannelRequest:
+		case *mycelv1.AgentPostRequest, *mycelv1.AgentBlackboardPutRequest, *mycelv1.AgentJoinChannelRequest,
+			*mycelv1.AgentRunJobRequest:
 			s.auditDenied(ctx, a.id, method, a.id, map[string]any{"reason": "agent paused", "paused_reason": a.paused})
 			return nil, rpcErr(connect.CodeFailedPrecondition, "agent paused (%s)", a.paused)
 		case *mycelv1.InboxPullRequest:
@@ -215,6 +240,36 @@ func (s *server) serveAgentRPC(ctx context.Context, node, method string, data []
 		return s.bbPutFor(ctx, a, r.GetPut())
 	case *mycelv1.AgentListMessagesRequest:
 		return s.listMessagesFor(ctx, a, r.GetList())
+	case *mycelv1.AgentRunJobRequest:
+		job, err := s.submitJob(ctx, a, r.GetSpec())
+		if err != nil {
+			return nil, err
+		}
+		return &mycelv1.RunJobResponse{Job: job}, nil
+	case *mycelv1.AgentGetJobRequest:
+		j, err := s.loadJob(ctx, a, policy.ActionJobGet, r.GetId())
+		if err != nil {
+			return nil, err
+		}
+		job, err := s.jobProto(ctx, j)
+		if err != nil {
+			return nil, err
+		}
+		return &mycelv1.GetJobResponse{Job: job}, nil
+	case *mycelv1.AgentCancelJobRequest:
+		job, err := s.cancelJob(ctx, a, r.GetId())
+		if err != nil {
+			return nil, err
+		}
+		return &mycelv1.CancelJobResponse{Job: job}, nil
+	case *mycelv1.AgentJobLogsRequest:
+		return s.agentJobLogs(ctx, a, r)
+	case *mycelv1.AgentListArtifactsRequest:
+		arts, err := s.visibleArtifacts(ctx, a, r.GetList())
+		if err != nil {
+			return nil, err
+		}
+		return &mycelv1.ListArtifactsResponse{Artifacts: arts}, nil
 	}
 	return nil, internalRPC()
 }

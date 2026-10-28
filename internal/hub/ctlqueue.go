@@ -2,10 +2,15 @@ package hub
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"sync"
 	"time"
 
+	"google.golang.org/protobuf/proto"
+
 	mycelv1 "github.com/richard-sen27/mycelium/gen/mycel/v1"
+	"github.com/richard-sen27/mycelium/internal/bus"
 )
 
 // Per-node control queues. Lifecycle decisions are taken under server.life,
@@ -22,6 +27,11 @@ type ctlItem struct {
 	// gate, when set, holds the item until it is closed: a pause decided
 	// during registration is sent only after the registration reply.
 	gate <-chan struct{}
+	// done, when set, receives the node's answer (or the request error)
+	// after a request with timeout (default 1 s). It runs on the queue's
+	// goroutine; it is not called when the hub stops meanwhile.
+	done    func(*mycelv1.CtlResponse, error)
+	timeout time.Duration
 }
 
 type ctlQueues struct {
@@ -42,6 +52,9 @@ func (s *server) enqueueCtl(node string, it ctlItem) {
 	defer cq.mu.Unlock()
 	if len(cq.q[node]) >= maxCtlQueue {
 		s.log.Warn("ctl queue full; control message dropped", "node", node)
+		if it.done != nil {
+			go it.done(nil, errCtlDropped)
+		}
 		return
 	}
 	cq.q[node] = append(cq.q[node], it)
@@ -92,8 +105,49 @@ func (s *server) runCtlQueue(node string) {
 			}
 			t.Stop()
 		}
+		if it.done != nil {
+			resp, err := s.requestCtl(node, it.req, it.timeout)
+			select {
+			case <-s.ch.stop:
+			default:
+				it.done(resp, err)
+			}
+			continue
+		}
 		s.sendCtl(context.Background(), node, it.req, true)
 	}
+}
+
+// errCtlDropped answers a control request that was never sent.
+var errCtlDropped = errors.New("control message dropped")
+
+// requestCtl sends a control request and decodes the node's CtlResponse.
+func (s *server) requestCtl(node string, req *mycelv1.CtlRequest, timeout time.Duration) (*mycelv1.CtlResponse, error) {
+	if timeout <= 0 {
+		timeout = time.Second
+	}
+	b, err := proto.Marshal(req)
+	if err != nil {
+		return nil, err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	go func() {
+		select {
+		case <-s.ch.stop:
+			cancel()
+		case <-ctx.Done():
+		}
+	}()
+	m, err := s.nc.RequestWithContext(ctx, bus.NodeCtl(node), b)
+	if err != nil {
+		return nil, err
+	}
+	var resp mycelv1.CtlResponse
+	if err := proto.Unmarshal(m.Data, &resp); err != nil {
+		return nil, fmt.Errorf("malformed control response: %w", err)
+	}
+	return &resp, nil
 }
 
 // lifeFx collects the side effects of lifecycle decisions taken under

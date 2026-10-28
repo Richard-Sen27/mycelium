@@ -288,7 +288,7 @@ func (n *nodeService) RemoveNode(ctx context.Context, req *connect.Request[mycel
 	// Under the lifecycle lock, so no pause or resume races the revocation
 	// of the node's agents.
 	s.life.Lock()
-	_, err = s.st.removeNode(ctx, name)
+	_, failedJobs, err := s.st.removeNode(ctx, name)
 	s.life.Unlock()
 	if err != nil {
 		if errors.Is(err, errNotFound) {
@@ -301,6 +301,9 @@ func (n *nodeService) RemoveNode(ctx context.Context, req *connect.Request[mycel
 	s.sendCtl(ctx, name, &mycelv1.CtlRequest{Cmd: &mycelv1.CtlRequest_Revoked{Revoked: &mycelv1.Revoked{Reason: "node removed"}}}, true)
 	dropped := s.bus.Disconnect(name)
 	s.beats.forget(name)
+	for _, id := range failedJobs {
+		s.jobFinished(ctx, u.ID, id)
+	}
 	s.audit(ctx, u.ID, string(policy.ActionNodeRemove), "node:"+name, outcomeOK,
 		map[string]any{"owner_id": row.OwnerID, "connections_dropped": dropped})
 	s.alert(ctx, name, "node %s removed by %s", name, u.ID)

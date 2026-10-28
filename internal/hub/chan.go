@@ -82,6 +82,7 @@ const (
 const (
 	streamChannelsMaxBytes = bus.DefaultJetStreamMaxStore / 2
 	streamAuditMaxBytes    = bus.DefaultJetStreamMaxStore / 4
+	streamJobLogsMaxBytes  = bus.DefaultJetStreamMaxStore / 4
 )
 
 // Rate limiter keys that cannot collide with channel names.
@@ -292,7 +293,7 @@ func (n *notifier) signal(keys ...string) {
 
 // ---- JetStream ----
 
-// setupStreams creates (or updates) the CH and AUDIT streams.
+// setupStreams creates (or updates) the CH, AUDIT and JOBLOG streams.
 //
 // CH holds one protobuf Message per accepted message on ch.<name>.msg. The
 // stream sequence is not the hub sequence (publishes are best effort and
@@ -311,6 +312,10 @@ func (s *server) setupStreams(ctx context.Context) error {
 		{
 			Name: bus.StreamAudit, Subjects: []string{bus.StreamAuditSubject}, Storage: jetstream.FileStorage,
 			MaxBytes: streamAuditMaxBytes, Discard: jetstream.DiscardOld,
+		},
+		{
+			Name: bus.StreamJobLogs, Subjects: []string{bus.StreamJobLogsSubject}, Storage: jetstream.FileStorage,
+			MaxBytes: streamJobLogsMaxBytes, Discard: jetstream.DiscardOld,
 		},
 	} {
 		if _, err := js.CreateOrUpdateStream(ctx, cfg); err != nil {
@@ -800,46 +805,18 @@ func (s *server) post(ctx context.Context, a actor, req *mycelv1.PostRequest) (*
 		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("channel is archived"))
 	}
 	pol := channels.WithDefaults(ch.Policy, ch.Type)
-	deny := func(reason string) error {
-		s.auditDenied(ctx, a.auditID(), string(policy.ActionChannelPost), "channel:"+ch.Name, map[string]any{"reason": reason})
-		return connect.NewError(connect.CodePermissionDenied, errors.New(reason))
-	}
 	if t.pending {
 		// The sender is one of the two participants.
 		p := a.p
 		p.Member = true
 		if d := s.policy.Authorize(ctx, p, policy.ActionChannelPost, channelResource(ch)); !d.Allow {
-			return nil, deny(d.Reason)
+			return nil, s.denyPost(ctx, a, ch, d.Reason)
 		}
-	} else if err := s.authorizeChannel(ctx, a, policy.ActionChannelPost, ch, true); err != nil {
+		if reason := mayPostRole(a, "", pol); reason != "" {
+			return nil, s.denyPost(ctx, a, ch, reason)
+		}
+	} else if err := s.postAllowed(ctx, a, ch); err != nil {
 		return nil, err
-	}
-	if a.origin != originHub {
-		_, role, err := s.targetMember(ctx, t, a.id)
-		if err != nil {
-			return nil, s.internalError("membership", err)
-		}
-		switch {
-		case role == memberObserver:
-			return nil, deny("observers may not post")
-		case a.origin == originAgent && !pol.GetAgentsMayPost():
-			return nil, deny("agents may not post in this channel")
-		case a.origin == originHuman && !pol.GetHumansMayPost():
-			return nil, deny("humans may not post in this channel")
-		}
-	}
-
-	// Agents may not post into a channel whose budget is exhausted, whatever
-	// their home channel (humans still may).
-	if a.origin == originAgent && !t.pending {
-		_, _, ex, err := s.channelBudget(ctx, ch.Name)
-		if err != nil {
-			return nil, s.internalError("channel budget", err)
-		}
-		if ex {
-			s.auditDenied(ctx, a.auditID(), string(policy.ActionChannelPost), "channel:"+ch.Name, map[string]any{"reason": "channel budget exhausted"})
-			return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("channel budget exhausted"))
-		}
 	}
 
 	// Mentions: members only; in a direct channel the other participant is
@@ -944,6 +921,68 @@ func (s *server) post(ctx context.Context, a actor, req *mycelv1.PostRequest) (*
 	s.audit(ctx, a.auditID(), string(policy.ActionChannelPost), "channel:"+ch.Name, outcomeOK,
 		map[string]any{"message_id": msg.Id, "seq": msg.Seq, "type": strings.ToLower(strings.TrimPrefix(typ.String(), "MESSAGE_TYPE_")), "trace_id": msg.Meta.TraceId})
 	return msg, nil
+}
+
+func (s *server) denyPost(ctx context.Context, a actor, ch *channelRow, reason string) error {
+	s.auditDenied(ctx, a.auditID(), string(policy.ActionChannelPost), "channel:"+ch.Name, map[string]any{"reason": reason})
+	return connect.NewError(connect.CodePermissionDenied, errors.New(reason))
+}
+
+// mayPostRole applies the member role and the channel's *_may_post to a
+// sender other than the hub; "" means allowed.
+func mayPostRole(a actor, role string, pol *mycelv1.ChannelPolicy) string {
+	switch {
+	case a.origin == originHub:
+		return ""
+	case role == memberObserver:
+		return "observers may not post"
+	case a.origin == originAgent && !pol.GetAgentsMayPost():
+		return "agents may not post in this channel"
+	case a.origin == originHuman && !pol.GetHumansMayPost():
+		return "humans may not post in this channel"
+	}
+	return ""
+}
+
+// postAllowed checks everything an existing channel requires of a sender,
+// apart from rate and hop limits: not archived, the policy (membership),
+// the sender's role and the channel's *_may_post, no system channel for
+// anyone but the hub, and for agents a channel budget that is not
+// exhausted. Message posts and job result messages (for the job's
+// submitter) both go through it. Denials are audited (sampled).
+func (s *server) postAllowed(ctx context.Context, a actor, ch *channelRow) error {
+	if ch.ArchivedAt != "" {
+		return connect.NewError(connect.CodeFailedPrecondition, errors.New("channel is archived"))
+	}
+	if err := s.authorizeChannel(ctx, a, policy.ActionChannelPost, ch, true); err != nil {
+		return err
+	}
+	if a.origin == originHub {
+		return nil
+	}
+	_, role, err := s.membership(ctx, ch, a.id)
+	if err != nil {
+		return s.internalError("membership", err)
+	}
+	if reason := mayPostRole(a, role, channels.WithDefaults(ch.Policy, ch.Type)); reason != "" {
+		return s.denyPost(ctx, a, ch, reason)
+	}
+	if ch.Type == mycelv1.ChannelType_CHANNEL_TYPE_SYSTEM {
+		return s.denyPost(ctx, a, ch, "only the hub posts in system channels")
+	}
+	// Agents may not post into a channel whose budget is exhausted, whatever
+	// their home channel (humans still may).
+	if a.origin == originAgent {
+		_, _, ex, err := s.channelBudget(ctx, ch.Name)
+		if err != nil {
+			return s.internalError("channel budget", err)
+		}
+		if ex {
+			s.auditDenied(ctx, a.auditID(), string(policy.ActionChannelPost), "channel:"+ch.Name, map[string]any{"reason": "channel budget exhausted"})
+			return connect.NewError(connect.CodeFailedPrecondition, errors.New("channel budget exhausted"))
+		}
+	}
+	return nil
 }
 
 // commitMessage stores msg, publishes it to the CH stream and wakes the

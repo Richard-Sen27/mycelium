@@ -61,6 +61,12 @@ type server struct {
 	ctlq *ctlQueues
 	// lifeLimit rate-limits a node's usage and exit reports.
 	lifeLimit *rateLimiter
+
+	// dir is the hub directory (logs and artifacts live below it).
+	dir string
+	// allowFake offers the CI-only fake profile (Options.AllowFakeProfile).
+	allowFake bool
+	jobs      *jobState
 }
 
 func runHub(ctx context.Context, opts Options, ready chan<- Ready) (err error) {
@@ -128,6 +134,7 @@ func runHub(ctx context.Context, opts Options, ready chan<- Ready) (err error) {
 		ch:         newChanState(),
 		ctlq:       newCtlQueues(),
 		lifeLimit:  newRateLimiter(lifeReportsPerMinute, lifeReportsBurst),
+		dir:        dir, allowFake: opts.AllowFakeProfile, jobs: newJobState(newJobConfig),
 	}
 	defer s.ch.shutdown()
 	// Startup steps run to completion even if ctx is already cancelled.
@@ -139,6 +146,10 @@ func runHub(ctx context.Context, opts Options, ready chan<- Ready) (err error) {
 	if err := ensureSystemChannels(startCtx, st, adminID); err != nil {
 		return err
 	}
+	if err := syncProfiles(startCtx, st, opts.AllowFakeProfile, log); err != nil {
+		return err
+	}
+	s.sweepUploads()
 
 	// ---- bus ----
 	busListen := orDefault(opts.BusListen, orDefault(cfg.BusListen, defaultBusListen))
@@ -181,6 +192,9 @@ func runHub(ctx context.Context, opts Options, ready chan<- Ready) (err error) {
 	}
 	subs, err := s.startRegistry()
 	if err != nil {
+		return err
+	}
+	if err := s.startScheduler(startCtx); err != nil {
 		return err
 	}
 	defer func() {
@@ -275,6 +289,11 @@ func (s *server) mux() http.Handler {
 	mux.Handle(mycelv1connect.NewEnrolServiceHandler(&enrolService{s}, opts...))
 	chPath, chHandler := mycelv1connect.NewChannelServiceHandler(&channelService{s}, opts...)
 	mux.Handle(chPath, streamDeadlines(chHandler))
+	jobPath, jobHandler := mycelv1connect.NewJobServiceHandler(&jobService{s}, opts...)
+	mux.Handle(jobPath, logStreamDeadlines(jobHandler))
+	mux.Handle(mycelv1connect.NewArtifactServiceHandler(&artifactService{s}, opts...))
+	mux.HandleFunc("PUT /api/artifacts", s.handleArtifactPut)
+	mux.HandleFunc("GET /api/artifacts/{id}", s.handleArtifactGet)
 	mux.HandleFunc("GET /ca.pem", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		_, _ = w.Write(s.caPEM)

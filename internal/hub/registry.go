@@ -73,8 +73,11 @@ func (s *server) handleRPC(msg *nats.Msg) {
 		data := msg.Data
 		if !s.ch.goWork(func(release func()) {
 			timeout := rpcTimeout
-			if method == bus.RPCAgentInboxPull {
+			switch method {
+			case bus.RPCAgentInboxPull:
 				timeout += maxInboxWait
+			case bus.RPCAgentJobLogs:
+				timeout += maxLogWait
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), timeout)
 			defer cancel()
@@ -86,6 +89,25 @@ func (s *server) handleRPC(msg *nats.Msg) {
 		return
 	}
 	switch method {
+	case bus.RPCJobStarted, bus.RPCJobLog, bus.RPCJobDone:
+		// Job reports write files and post results; they leave the serial
+		// subscription callback and share the node's RPC slots.
+		if !s.ch.acquire(s.ch.nodeRPCs, node, maxNodeRPCs) {
+			s.reply(msg, nil, rpcErr(connect.CodeResourceExhausted, "node busy: too many concurrent requests (max %d)", maxNodeRPCs))
+			return
+		}
+		data := msg.Data
+		if !s.ch.goWork(func(func()) {
+			defer s.ch.release(s.ch.nodeRPCs, node)
+			ctx, cancel := context.WithTimeout(context.Background(), rpcTimeout)
+			defer cancel()
+			resp, err := s.serveJobRPC(ctx, node, method, data)
+			s.reply(msg, resp, err)
+		}) {
+			s.ch.release(s.ch.nodeRPCs, node)
+			s.reply(msg, nil, connect.NewError(connect.CodeUnavailable, errors.New("hub busy or stopping; retry")))
+		}
+		return
 	case bus.RPCAgentUsage, bus.RPCAgentExited:
 		// Lifecycle reports take the lifecycle lock, so they leave the
 		// serial subscription callback; they are rate limited per node and
