@@ -12,7 +12,7 @@
 //
 // Local status endpoint (plain HTTP on LocalAddr, default 127.0.0.1:7777):
 //
-//	GET /api/status  -> JSON {"node":"<name>","hub_url":"...","state":"connecting|connected|disconnected|revoked","connected":bool,"last_heartbeat_at":"...","cert_not_after":"...","inventory":{...}}
+//	GET /api/status  -> JSON {"node":"<name>","hub_url":"...","state":"connecting|connected|disconnected|revoked|expired","connected":bool,"last_heartbeat_at":"...","cert_not_after":"...","inventory":{...}}
 //	GET /            -> minimal HTML page showing the same (placeholder until phase 6)
 package daemon
 
@@ -21,9 +21,6 @@ import (
 	"errors"
 	"log/slog"
 )
-
-// ErrNotImplemented marks a stub.
-var ErrNotImplemented = errors.New("daemon: not implemented")
 
 // JoinOptions configures `mycel join`.
 type JoinOptions struct {
@@ -49,7 +46,7 @@ type JoinResult struct {
 // Join enrols this machine: generates a key (if none), builds a CSR, verifies
 // the hub's CA against the fingerprint in the token, calls EnrolService.Enrol
 // and writes the node state. It fails if NodeDir already holds a node.
-func Join(ctx context.Context, opts JoinOptions) (*JoinResult, error) { panic(ErrNotImplemented) }
+func Join(ctx context.Context, opts JoinOptions) (*JoinResult, error) { return join(ctx, opts) }
 
 // Options configures the running node role.
 type Options struct {
@@ -66,7 +63,9 @@ type Ready struct {
 // Run starts the node role and blocks until ctx is done, the node is revoked
 // (returns ErrRevoked) or a fatal error occurs. If ready is non-nil it receives
 // one Ready once the local listener is up.
-func Run(ctx context.Context, opts Options, ready chan<- Ready) error { panic(ErrNotImplemented) }
+func Run(ctx context.Context, opts Options, ready chan<- Ready) error {
+	return run(ctx, opts, ready, defaultRunConfig())
+}
 
 // ErrRevoked is returned by Run when the hub revoked this node.
 var ErrRevoked = errors.New("daemon: node revoked by hub")
