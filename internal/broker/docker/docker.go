@@ -381,7 +381,8 @@ func (b *Broker) removeContainers(ctx context.Context, grantID, subject, sandbox
 
 // Sweep removes containers labelled mycel.grant whose grant is not attached,
 // e.g. left over from a daemon that stopped without detaching. The daemon
-// calls it at start, before re-attaching grants.
+// calls it once at start, after re-attaching the grants it persisted, so
+// containers of grants that are still valid survive a restart.
 func (b *Broker) Sweep(ctx context.Context) error {
 	raw, _ := json.Marshal(map[string][]string{"label": {LabelGrant}})
 	q := url.Values{"all": {"1"}, "filters": {string(raw)}}

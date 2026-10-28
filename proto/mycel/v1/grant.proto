@@ -81,6 +81,9 @@ message Grant {
   string decision_note = 14;
   string channel = 15; // channel the request was made from (policy context)
   bool requires_approval = 16;
+  // usage sums the broker reports (broker.usage) for this grant; filled by
+  // GetGrant/ListGrants and carried on grant events (phase 6).
+  GrantUsage usage = 17;
 }
 
 // SharingSettings are what a node offers (spec: "Sharing settings per node").
@@ -90,7 +93,10 @@ message Grant {
 message SharingSettings {
   Capabilities offer = 1; // docker, ollama, gpu, sandbox
   string when = 2; // "always", "idle", "schedule"
-  repeated ScheduleWindow schedule = 3; // used when when == "schedule"
+  // schedule applies when when == "schedule"; when == "idle" with a non-empty
+  // schedule means "idle AND inside a window" (the effective setting of a
+  // scheduled hub setting and an idle-only local ceiling).
+  repeated ScheduleWindow schedule = 3;
   bool local_first = 4; // throttle/pause remote sandboxes while the owner is active
   int32 max_jobs = 5; // concurrent remote jobs; 0 = default
   int32 idle_after_minutes = 6; // for "idle"; default 10
@@ -286,6 +292,14 @@ message GrantRevokedRequest {
 message GrantRevokedResponse {}
 
 // BrokerUsageRequest reports broker usage per subject (node.<name>.rpc.broker.usage).
+// GrantUsage is the hub's running total for one grant.
+message GrantUsage {
+  int64 tokens = 1; // ollama generated tokens
+  int64 requests = 2;
+  int64 gpu_seconds = 3;
+  string updated_at = 4; // RFC 3339 of the last report; empty when none
+}
+
 message BrokerUsageRequest {
   string grant_id = 1;
   string subject = 2;

@@ -6,7 +6,7 @@ The full design is in [docs/spec.md](docs/spec.md). Progress and decisions: [doc
 
 ## Status
 
-Phases 1–4 work: one binary; a hub with users and API keys; nodes that join with one-time tokens and authenticate with mTLS; channels, direct messages, inboxes and blackboards; `mycel mcp` for Claude Code (and Codex) with hooks; local worker agents with budgets; jobs in sandboxes (Lima VMs on macOS, gVisor on Linux and Windows WSL2, compile-checked there) with an egress proxy and artifacts. Brokers, grants and approvals (phase 5) are in progress.
+Phases 1–4 work: one binary; a hub with users and API keys; nodes that join with one-time tokens and authenticate with mTLS; channels, direct messages, inboxes and blackboards; `mycel mcp` for Claude Code (and Codex) with hooks; local worker agents with budgets; jobs in sandboxes (Lima VMs on macOS, gVisor on Linux and Windows WSL2, compile-checked there) with an egress proxy and artifacts. Phase 5 adds brokers (Ollama, GPU, Docker) behind per-grant credentials, grants with approvals and auto rules, per-node sharing settings that the owner can only tighten locally, and the kill switch (pause, channel freeze, network freeze). The web UI (phase 6) is in progress.
 
 ## Build and test
 
@@ -70,4 +70,31 @@ mycel job run --profile dev --channel '#backend' --output 'report/*' -- sh -c 'm
 mycel job logs <id> --follow
 mycel artifacts ls --job <id>
 ```
+
+## Sharing, grants and the kill switch
+
+```
+# what this machine offers, as its owner (a ceiling the hub cannot raise)
+mycel node share --offer docker,ollama --when idle --local-first --max-jobs 1
+mycel node grants ls                       # grants other members' agents hold here
+mycel node grants revoke grt_…             # ends one at once, even with the hub down
+
+# as an admin: what the hub asks a node to share
+mycel nodes share gpu-box --offer gpu,sandbox --when schedule --window mon-fri=22:00-07:00
+
+# an agent asks for a resource (or: mycel grants request --kind ollama --subject agent:coder@mac --model llama3)
+#   request_grant from the MCP tools; auto rules in hub.yaml approve known cases
+mycel grants ls --pending
+mycel approve grt_… --duration 2h          # admin, or the owner of the node it attaches to
+mycel deny grt_… --note "not tonight"
+
+# kill switch
+mycel freeze --agent agt_…                 # one agent
+mycel freeze --channel '#task-42'          # a channel and every agent homed there
+mycel freeze --all --reason drill          # the network: sandboxes stop, brokers deny (admin only)
+mycel freeze status
+mycel unfreeze --all
+```
+
+Approvals also appear on the hub's `/ui/approvals` page (sign in with an API key). Grants attach the resource to the agent's or job's sandbox through a broker: an Ollama token scoped to the granted models, a leased GPU, or a Docker endpoint that only creates no-network containers under the grant's limits. The host Docker socket is never exposed.
 

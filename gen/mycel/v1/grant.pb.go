@@ -542,8 +542,11 @@ type Grant struct {
 	DecisionNote     string     `protobuf:"bytes,14,opt,name=decision_note,json=decisionNote,proto3" json:"decision_note,omitempty"`
 	Channel          string     `protobuf:"bytes,15,opt,name=channel,proto3" json:"channel,omitempty"` // channel the request was made from (policy context)
 	RequiresApproval bool       `protobuf:"varint,16,opt,name=requires_approval,json=requiresApproval,proto3" json:"requires_approval,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// usage sums the broker reports (broker.usage) for this grant; filled by
+	// GetGrant/ListGrants and carried on grant events (phase 6).
+	Usage         *GrantUsage `protobuf:"bytes,17,opt,name=usage,proto3" json:"usage,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Grant) Reset() {
@@ -688,18 +691,28 @@ func (x *Grant) GetRequiresApproval() bool {
 	return false
 }
 
+func (x *Grant) GetUsage() *GrantUsage {
+	if x != nil {
+		return x.Usage
+	}
+	return nil
+}
+
 // SharingSettings are what a node offers (spec: "Sharing settings per node").
 // The hub holds the owner's settings within the token ceiling; the node keeps
 // a local copy that may only tighten them and that it enforces even while the
 // hub is unreachable.
 type SharingSettings struct {
-	state            protoimpl.MessageState `protogen:"open.v1"`
-	Offer            *Capabilities          `protobuf:"bytes,1,opt,name=offer,proto3" json:"offer,omitempty"`                                                  // docker, ollama, gpu, sandbox
-	When             string                 `protobuf:"bytes,2,opt,name=when,proto3" json:"when,omitempty"`                                                    // "always", "idle", "schedule"
-	Schedule         []*ScheduleWindow      `protobuf:"bytes,3,rep,name=schedule,proto3" json:"schedule,omitempty"`                                            // used when when == "schedule"
-	LocalFirst       bool                   `protobuf:"varint,4,opt,name=local_first,json=localFirst,proto3" json:"local_first,omitempty"`                     // throttle/pause remote sandboxes while the owner is active
-	MaxJobs          int32                  `protobuf:"varint,5,opt,name=max_jobs,json=maxJobs,proto3" json:"max_jobs,omitempty"`                              // concurrent remote jobs; 0 = default
-	IdleAfterMinutes int32                  `protobuf:"varint,6,opt,name=idle_after_minutes,json=idleAfterMinutes,proto3" json:"idle_after_minutes,omitempty"` // for "idle"; default 10
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Offer *Capabilities          `protobuf:"bytes,1,opt,name=offer,proto3" json:"offer,omitempty"` // docker, ollama, gpu, sandbox
+	When  string                 `protobuf:"bytes,2,opt,name=when,proto3" json:"when,omitempty"`   // "always", "idle", "schedule"
+	// schedule applies when when == "schedule"; when == "idle" with a non-empty
+	// schedule means "idle AND inside a window" (the effective setting of a
+	// scheduled hub setting and an idle-only local ceiling).
+	Schedule         []*ScheduleWindow `protobuf:"bytes,3,rep,name=schedule,proto3" json:"schedule,omitempty"`
+	LocalFirst       bool              `protobuf:"varint,4,opt,name=local_first,json=localFirst,proto3" json:"local_first,omitempty"`                     // throttle/pause remote sandboxes while the owner is active
+	MaxJobs          int32             `protobuf:"varint,5,opt,name=max_jobs,json=maxJobs,proto3" json:"max_jobs,omitempty"`                              // concurrent remote jobs; 0 = default
+	IdleAfterMinutes int32             `protobuf:"varint,6,opt,name=idle_after_minutes,json=idleAfterMinutes,proto3" json:"idle_after_minutes,omitempty"` // for "idle"; default 10
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -2495,6 +2508,75 @@ func (*GrantRevokedResponse) Descriptor() ([]byte, []int) {
 }
 
 // BrokerUsageRequest reports broker usage per subject (node.<name>.rpc.broker.usage).
+// GrantUsage is the hub's running total for one grant.
+type GrantUsage struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Tokens        int64                  `protobuf:"varint,1,opt,name=tokens,proto3" json:"tokens,omitempty"` // ollama generated tokens
+	Requests      int64                  `protobuf:"varint,2,opt,name=requests,proto3" json:"requests,omitempty"`
+	GpuSeconds    int64                  `protobuf:"varint,3,opt,name=gpu_seconds,json=gpuSeconds,proto3" json:"gpu_seconds,omitempty"`
+	UpdatedAt     string                 `protobuf:"bytes,4,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"` // RFC 3339 of the last report; empty when none
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GrantUsage) Reset() {
+	*x = GrantUsage{}
+	mi := &file_mycel_v1_grant_proto_msgTypes[43]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GrantUsage) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GrantUsage) ProtoMessage() {}
+
+func (x *GrantUsage) ProtoReflect() protoreflect.Message {
+	mi := &file_mycel_v1_grant_proto_msgTypes[43]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GrantUsage.ProtoReflect.Descriptor instead.
+func (*GrantUsage) Descriptor() ([]byte, []int) {
+	return file_mycel_v1_grant_proto_rawDescGZIP(), []int{43}
+}
+
+func (x *GrantUsage) GetTokens() int64 {
+	if x != nil {
+		return x.Tokens
+	}
+	return 0
+}
+
+func (x *GrantUsage) GetRequests() int64 {
+	if x != nil {
+		return x.Requests
+	}
+	return 0
+}
+
+func (x *GrantUsage) GetGpuSeconds() int64 {
+	if x != nil {
+		return x.GpuSeconds
+	}
+	return 0
+}
+
+func (x *GrantUsage) GetUpdatedAt() string {
+	if x != nil {
+		return x.UpdatedAt
+	}
+	return ""
+}
+
 type BrokerUsageRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	GrantId       string                 `protobuf:"bytes,1,opt,name=grant_id,json=grantId,proto3" json:"grant_id,omitempty"`
@@ -2510,7 +2592,7 @@ type BrokerUsageRequest struct {
 
 func (x *BrokerUsageRequest) Reset() {
 	*x = BrokerUsageRequest{}
-	mi := &file_mycel_v1_grant_proto_msgTypes[43]
+	mi := &file_mycel_v1_grant_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2522,7 +2604,7 @@ func (x *BrokerUsageRequest) String() string {
 func (*BrokerUsageRequest) ProtoMessage() {}
 
 func (x *BrokerUsageRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_mycel_v1_grant_proto_msgTypes[43]
+	mi := &file_mycel_v1_grant_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2535,7 +2617,7 @@ func (x *BrokerUsageRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BrokerUsageRequest.ProtoReflect.Descriptor instead.
 func (*BrokerUsageRequest) Descriptor() ([]byte, []int) {
-	return file_mycel_v1_grant_proto_rawDescGZIP(), []int{43}
+	return file_mycel_v1_grant_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *BrokerUsageRequest) GetGrantId() string {
@@ -2596,7 +2678,7 @@ type BrokerUsageResponse struct {
 
 func (x *BrokerUsageResponse) Reset() {
 	*x = BrokerUsageResponse{}
-	mi := &file_mycel_v1_grant_proto_msgTypes[44]
+	mi := &file_mycel_v1_grant_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2608,7 +2690,7 @@ func (x *BrokerUsageResponse) String() string {
 func (*BrokerUsageResponse) ProtoMessage() {}
 
 func (x *BrokerUsageResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_mycel_v1_grant_proto_msgTypes[44]
+	mi := &file_mycel_v1_grant_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2621,7 +2703,7 @@ func (x *BrokerUsageResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BrokerUsageResponse.ProtoReflect.Descriptor instead.
 func (*BrokerUsageResponse) Descriptor() ([]byte, []int) {
-	return file_mycel_v1_grant_proto_rawDescGZIP(), []int{44}
+	return file_mycel_v1_grant_proto_rawDescGZIP(), []int{45}
 }
 
 func (x *BrokerUsageResponse) GetDeny() bool {
@@ -2641,7 +2723,7 @@ type NodeSharingRequest struct {
 
 func (x *NodeSharingRequest) Reset() {
 	*x = NodeSharingRequest{}
-	mi := &file_mycel_v1_grant_proto_msgTypes[45]
+	mi := &file_mycel_v1_grant_proto_msgTypes[46]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2653,7 +2735,7 @@ func (x *NodeSharingRequest) String() string {
 func (*NodeSharingRequest) ProtoMessage() {}
 
 func (x *NodeSharingRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_mycel_v1_grant_proto_msgTypes[45]
+	mi := &file_mycel_v1_grant_proto_msgTypes[46]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2666,7 +2748,7 @@ func (x *NodeSharingRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NodeSharingRequest.ProtoReflect.Descriptor instead.
 func (*NodeSharingRequest) Descriptor() ([]byte, []int) {
-	return file_mycel_v1_grant_proto_rawDescGZIP(), []int{45}
+	return file_mycel_v1_grant_proto_rawDescGZIP(), []int{46}
 }
 
 func (x *NodeSharingRequest) GetLocal() *SharingSettings {
@@ -2685,7 +2767,7 @@ type NodeSharingResponse struct {
 
 func (x *NodeSharingResponse) Reset() {
 	*x = NodeSharingResponse{}
-	mi := &file_mycel_v1_grant_proto_msgTypes[46]
+	mi := &file_mycel_v1_grant_proto_msgTypes[47]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2697,7 +2779,7 @@ func (x *NodeSharingResponse) String() string {
 func (*NodeSharingResponse) ProtoMessage() {}
 
 func (x *NodeSharingResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_mycel_v1_grant_proto_msgTypes[46]
+	mi := &file_mycel_v1_grant_proto_msgTypes[47]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2710,7 +2792,7 @@ func (x *NodeSharingResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NodeSharingResponse.ProtoReflect.Descriptor instead.
 func (*NodeSharingResponse) Descriptor() ([]byte, []int) {
-	return file_mycel_v1_grant_proto_rawDescGZIP(), []int{46}
+	return file_mycel_v1_grant_proto_rawDescGZIP(), []int{47}
 }
 
 func (x *NodeSharingResponse) GetHub() *SharingSettings {
@@ -2757,7 +2839,7 @@ const file_mycel_v1_grant_proto_rawDesc = "" +
 	"dockerHost\x12,\n" +
 	"\x05mount\x18\x04 \x01(\v2\x14.mycel.v1.MountGrantH\x00R\x05mount\x12/\n" +
 	"\x06egress\x18\x05 \x01(\v2\x15.mycel.v1.EgressGrantH\x00R\x06egressB\x06\n" +
-	"\x04kind\"\xf8\x03\n" +
+	"\x04kind\"\xa4\x04\n" +
 	"\x05Grant\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12'\n" +
 	"\x04spec\x18\x02 \x01(\v2\x13.mycel.v1.GrantSpecR\x04spec\x12\x18\n" +
@@ -2778,7 +2860,8 @@ const file_mycel_v1_grant_proto_rawDesc = "" +
 	"decided_by\x18\r \x01(\tR\tdecidedBy\x12#\n" +
 	"\rdecision_note\x18\x0e \x01(\tR\fdecisionNote\x12\x18\n" +
 	"\achannel\x18\x0f \x01(\tR\achannel\x12+\n" +
-	"\x11requires_approval\x18\x10 \x01(\bR\x10requiresApproval\"\xf3\x01\n" +
+	"\x11requires_approval\x18\x10 \x01(\bR\x10requiresApproval\x12*\n" +
+	"\x05usage\x18\x11 \x01(\v2\x14.mycel.v1.GrantUsageR\x05usage\"\xf3\x01\n" +
 	"\x0fSharingSettings\x12,\n" +
 	"\x05offer\x18\x01 \x01(\v2\x16.mycel.v1.CapabilitiesR\x05offer\x12\x12\n" +
 	"\x04when\x18\x02 \x01(\tR\x04when\x124\n" +
@@ -2879,7 +2962,15 @@ const file_mycel_v1_grant_proto_rawDesc = "" +
 	"\x13GrantRevokedRequest\x12\x19\n" +
 	"\bgrant_id\x18\x01 \x01(\tR\agrantId\x12\x16\n" +
 	"\x06reason\x18\x02 \x01(\tR\x06reason\"\x16\n" +
-	"\x14GrantRevokedResponse\"\xcc\x01\n" +
+	"\x14GrantRevokedResponse\"\x80\x01\n" +
+	"\n" +
+	"GrantUsage\x12\x16\n" +
+	"\x06tokens\x18\x01 \x01(\x03R\x06tokens\x12\x1a\n" +
+	"\brequests\x18\x02 \x01(\x03R\brequests\x12\x1f\n" +
+	"\vgpu_seconds\x18\x03 \x01(\x03R\n" +
+	"gpuSeconds\x12\x1d\n" +
+	"\n" +
+	"updated_at\x18\x04 \x01(\tR\tupdatedAt\"\xcc\x01\n" +
 	"\x12BrokerUsageRequest\x12\x19\n" +
 	"\bgrant_id\x18\x01 \x01(\tR\agrantId\x12\x18\n" +
 	"\asubject\x18\x02 \x01(\tR\asubject\x12\x16\n" +
@@ -2935,7 +3026,7 @@ func file_mycel_v1_grant_proto_rawDescGZIP() []byte {
 }
 
 var file_mycel_v1_grant_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_mycel_v1_grant_proto_msgTypes = make([]protoimpl.MessageInfo, 47)
+var file_mycel_v1_grant_proto_msgTypes = make([]protoimpl.MessageInfo, 48)
 var file_mycel_v1_grant_proto_goTypes = []any{
 	(GrantState)(0),                  // 0: mycel.v1.GrantState
 	(*OllamaGrant)(nil),              // 1: mycel.v1.OllamaGrant
@@ -2981,12 +3072,13 @@ var file_mycel_v1_grant_proto_goTypes = []any{
 	(*Unfreeze)(nil),                 // 41: mycel.v1.Unfreeze
 	(*GrantRevokedRequest)(nil),      // 42: mycel.v1.GrantRevokedRequest
 	(*GrantRevokedResponse)(nil),     // 43: mycel.v1.GrantRevokedResponse
-	(*BrokerUsageRequest)(nil),       // 44: mycel.v1.BrokerUsageRequest
-	(*BrokerUsageResponse)(nil),      // 45: mycel.v1.BrokerUsageResponse
-	(*NodeSharingRequest)(nil),       // 46: mycel.v1.NodeSharingRequest
-	(*NodeSharingResponse)(nil),      // 47: mycel.v1.NodeSharingResponse
-	(*Capabilities)(nil),             // 48: mycel.v1.Capabilities
-	(*AgentCall)(nil),                // 49: mycel.v1.AgentCall
+	(*GrantUsage)(nil),               // 44: mycel.v1.GrantUsage
+	(*BrokerUsageRequest)(nil),       // 45: mycel.v1.BrokerUsageRequest
+	(*BrokerUsageResponse)(nil),      // 46: mycel.v1.BrokerUsageResponse
+	(*NodeSharingRequest)(nil),       // 47: mycel.v1.NodeSharingRequest
+	(*NodeSharingResponse)(nil),      // 48: mycel.v1.NodeSharingResponse
+	(*Capabilities)(nil),             // 49: mycel.v1.Capabilities
+	(*AgentCall)(nil),                // 50: mycel.v1.AgentCall
 }
 var file_mycel_v1_grant_proto_depIdxs = []int32{
 	1,  // 0: mycel.v1.GrantSpec.ollama:type_name -> mycel.v1.OllamaGrant
@@ -2996,57 +3088,58 @@ var file_mycel_v1_grant_proto_depIdxs = []int32{
 	5,  // 4: mycel.v1.GrantSpec.egress:type_name -> mycel.v1.EgressGrant
 	6,  // 5: mycel.v1.Grant.spec:type_name -> mycel.v1.GrantSpec
 	0,  // 6: mycel.v1.Grant.state:type_name -> mycel.v1.GrantState
-	48, // 7: mycel.v1.SharingSettings.offer:type_name -> mycel.v1.Capabilities
-	9,  // 8: mycel.v1.SharingSettings.schedule:type_name -> mycel.v1.ScheduleWindow
-	6,  // 9: mycel.v1.RequestGrantRequest.spec:type_name -> mycel.v1.GrantSpec
-	7,  // 10: mycel.v1.RequestGrantResponse.grant:type_name -> mycel.v1.Grant
-	7,  // 11: mycel.v1.ListGrantsResponse.grants:type_name -> mycel.v1.Grant
-	7,  // 12: mycel.v1.GetGrantResponse.grant:type_name -> mycel.v1.Grant
-	7,  // 13: mycel.v1.ApproveGrantResponse.grant:type_name -> mycel.v1.Grant
-	7,  // 14: mycel.v1.DenyGrantResponse.grant:type_name -> mycel.v1.Grant
-	7,  // 15: mycel.v1.RevokeGrantResponse.grant:type_name -> mycel.v1.Grant
-	8,  // 16: mycel.v1.GetNodeSharingResponse.hub:type_name -> mycel.v1.SharingSettings
-	8,  // 17: mycel.v1.GetNodeSharingResponse.local:type_name -> mycel.v1.SharingSettings
-	8,  // 18: mycel.v1.GetNodeSharingResponse.effective:type_name -> mycel.v1.SharingSettings
-	8,  // 19: mycel.v1.SetNodeSharingRequest.settings:type_name -> mycel.v1.SharingSettings
-	23, // 20: mycel.v1.SetNodeSharingResponse.sharing:type_name -> mycel.v1.GetNodeSharingResponse
-	49, // 21: mycel.v1.AgentRequestGrantRequest.call:type_name -> mycel.v1.AgentCall
-	6,  // 22: mycel.v1.AgentRequestGrantRequest.spec:type_name -> mycel.v1.GrantSpec
-	49, // 23: mycel.v1.AgentListGrantsRequest.call:type_name -> mycel.v1.AgentCall
-	7,  // 24: mycel.v1.AttachGrant.grant:type_name -> mycel.v1.Grant
-	8,  // 25: mycel.v1.NodeSharingRequest.local:type_name -> mycel.v1.SharingSettings
-	8,  // 26: mycel.v1.NodeSharingResponse.hub:type_name -> mycel.v1.SharingSettings
-	10, // 27: mycel.v1.GrantService.RequestGrant:input_type -> mycel.v1.RequestGrantRequest
-	12, // 28: mycel.v1.GrantService.ListGrants:input_type -> mycel.v1.ListGrantsRequest
-	14, // 29: mycel.v1.GrantService.GetGrant:input_type -> mycel.v1.GetGrantRequest
-	16, // 30: mycel.v1.GrantService.ApproveGrant:input_type -> mycel.v1.ApproveGrantRequest
-	18, // 31: mycel.v1.GrantService.DenyGrant:input_type -> mycel.v1.DenyGrantRequest
-	20, // 32: mycel.v1.GrantService.RevokeGrant:input_type -> mycel.v1.RevokeGrantRequest
-	22, // 33: mycel.v1.ControlService.GetNodeSharing:input_type -> mycel.v1.GetNodeSharingRequest
-	24, // 34: mycel.v1.ControlService.SetNodeSharing:input_type -> mycel.v1.SetNodeSharingRequest
-	26, // 35: mycel.v1.ControlService.FreezeChannel:input_type -> mycel.v1.FreezeChannelRequest
-	28, // 36: mycel.v1.ControlService.UnfreezeChannel:input_type -> mycel.v1.UnfreezeChannelRequest
-	30, // 37: mycel.v1.ControlService.FreezeAll:input_type -> mycel.v1.FreezeAllRequest
-	32, // 38: mycel.v1.ControlService.UnfreezeAll:input_type -> mycel.v1.UnfreezeAllRequest
-	34, // 39: mycel.v1.ControlService.FreezeStatus:input_type -> mycel.v1.FreezeStatusRequest
-	11, // 40: mycel.v1.GrantService.RequestGrant:output_type -> mycel.v1.RequestGrantResponse
-	13, // 41: mycel.v1.GrantService.ListGrants:output_type -> mycel.v1.ListGrantsResponse
-	15, // 42: mycel.v1.GrantService.GetGrant:output_type -> mycel.v1.GetGrantResponse
-	17, // 43: mycel.v1.GrantService.ApproveGrant:output_type -> mycel.v1.ApproveGrantResponse
-	19, // 44: mycel.v1.GrantService.DenyGrant:output_type -> mycel.v1.DenyGrantResponse
-	21, // 45: mycel.v1.GrantService.RevokeGrant:output_type -> mycel.v1.RevokeGrantResponse
-	23, // 46: mycel.v1.ControlService.GetNodeSharing:output_type -> mycel.v1.GetNodeSharingResponse
-	25, // 47: mycel.v1.ControlService.SetNodeSharing:output_type -> mycel.v1.SetNodeSharingResponse
-	27, // 48: mycel.v1.ControlService.FreezeChannel:output_type -> mycel.v1.FreezeChannelResponse
-	29, // 49: mycel.v1.ControlService.UnfreezeChannel:output_type -> mycel.v1.UnfreezeChannelResponse
-	31, // 50: mycel.v1.ControlService.FreezeAll:output_type -> mycel.v1.FreezeAllResponse
-	33, // 51: mycel.v1.ControlService.UnfreezeAll:output_type -> mycel.v1.UnfreezeAllResponse
-	35, // 52: mycel.v1.ControlService.FreezeStatus:output_type -> mycel.v1.FreezeStatusResponse
-	40, // [40:53] is the sub-list for method output_type
-	27, // [27:40] is the sub-list for method input_type
-	27, // [27:27] is the sub-list for extension type_name
-	27, // [27:27] is the sub-list for extension extendee
-	0,  // [0:27] is the sub-list for field type_name
+	44, // 7: mycel.v1.Grant.usage:type_name -> mycel.v1.GrantUsage
+	49, // 8: mycel.v1.SharingSettings.offer:type_name -> mycel.v1.Capabilities
+	9,  // 9: mycel.v1.SharingSettings.schedule:type_name -> mycel.v1.ScheduleWindow
+	6,  // 10: mycel.v1.RequestGrantRequest.spec:type_name -> mycel.v1.GrantSpec
+	7,  // 11: mycel.v1.RequestGrantResponse.grant:type_name -> mycel.v1.Grant
+	7,  // 12: mycel.v1.ListGrantsResponse.grants:type_name -> mycel.v1.Grant
+	7,  // 13: mycel.v1.GetGrantResponse.grant:type_name -> mycel.v1.Grant
+	7,  // 14: mycel.v1.ApproveGrantResponse.grant:type_name -> mycel.v1.Grant
+	7,  // 15: mycel.v1.DenyGrantResponse.grant:type_name -> mycel.v1.Grant
+	7,  // 16: mycel.v1.RevokeGrantResponse.grant:type_name -> mycel.v1.Grant
+	8,  // 17: mycel.v1.GetNodeSharingResponse.hub:type_name -> mycel.v1.SharingSettings
+	8,  // 18: mycel.v1.GetNodeSharingResponse.local:type_name -> mycel.v1.SharingSettings
+	8,  // 19: mycel.v1.GetNodeSharingResponse.effective:type_name -> mycel.v1.SharingSettings
+	8,  // 20: mycel.v1.SetNodeSharingRequest.settings:type_name -> mycel.v1.SharingSettings
+	23, // 21: mycel.v1.SetNodeSharingResponse.sharing:type_name -> mycel.v1.GetNodeSharingResponse
+	50, // 22: mycel.v1.AgentRequestGrantRequest.call:type_name -> mycel.v1.AgentCall
+	6,  // 23: mycel.v1.AgentRequestGrantRequest.spec:type_name -> mycel.v1.GrantSpec
+	50, // 24: mycel.v1.AgentListGrantsRequest.call:type_name -> mycel.v1.AgentCall
+	7,  // 25: mycel.v1.AttachGrant.grant:type_name -> mycel.v1.Grant
+	8,  // 26: mycel.v1.NodeSharingRequest.local:type_name -> mycel.v1.SharingSettings
+	8,  // 27: mycel.v1.NodeSharingResponse.hub:type_name -> mycel.v1.SharingSettings
+	10, // 28: mycel.v1.GrantService.RequestGrant:input_type -> mycel.v1.RequestGrantRequest
+	12, // 29: mycel.v1.GrantService.ListGrants:input_type -> mycel.v1.ListGrantsRequest
+	14, // 30: mycel.v1.GrantService.GetGrant:input_type -> mycel.v1.GetGrantRequest
+	16, // 31: mycel.v1.GrantService.ApproveGrant:input_type -> mycel.v1.ApproveGrantRequest
+	18, // 32: mycel.v1.GrantService.DenyGrant:input_type -> mycel.v1.DenyGrantRequest
+	20, // 33: mycel.v1.GrantService.RevokeGrant:input_type -> mycel.v1.RevokeGrantRequest
+	22, // 34: mycel.v1.ControlService.GetNodeSharing:input_type -> mycel.v1.GetNodeSharingRequest
+	24, // 35: mycel.v1.ControlService.SetNodeSharing:input_type -> mycel.v1.SetNodeSharingRequest
+	26, // 36: mycel.v1.ControlService.FreezeChannel:input_type -> mycel.v1.FreezeChannelRequest
+	28, // 37: mycel.v1.ControlService.UnfreezeChannel:input_type -> mycel.v1.UnfreezeChannelRequest
+	30, // 38: mycel.v1.ControlService.FreezeAll:input_type -> mycel.v1.FreezeAllRequest
+	32, // 39: mycel.v1.ControlService.UnfreezeAll:input_type -> mycel.v1.UnfreezeAllRequest
+	34, // 40: mycel.v1.ControlService.FreezeStatus:input_type -> mycel.v1.FreezeStatusRequest
+	11, // 41: mycel.v1.GrantService.RequestGrant:output_type -> mycel.v1.RequestGrantResponse
+	13, // 42: mycel.v1.GrantService.ListGrants:output_type -> mycel.v1.ListGrantsResponse
+	15, // 43: mycel.v1.GrantService.GetGrant:output_type -> mycel.v1.GetGrantResponse
+	17, // 44: mycel.v1.GrantService.ApproveGrant:output_type -> mycel.v1.ApproveGrantResponse
+	19, // 45: mycel.v1.GrantService.DenyGrant:output_type -> mycel.v1.DenyGrantResponse
+	21, // 46: mycel.v1.GrantService.RevokeGrant:output_type -> mycel.v1.RevokeGrantResponse
+	23, // 47: mycel.v1.ControlService.GetNodeSharing:output_type -> mycel.v1.GetNodeSharingResponse
+	25, // 48: mycel.v1.ControlService.SetNodeSharing:output_type -> mycel.v1.SetNodeSharingResponse
+	27, // 49: mycel.v1.ControlService.FreezeChannel:output_type -> mycel.v1.FreezeChannelResponse
+	29, // 50: mycel.v1.ControlService.UnfreezeChannel:output_type -> mycel.v1.UnfreezeChannelResponse
+	31, // 51: mycel.v1.ControlService.FreezeAll:output_type -> mycel.v1.FreezeAllResponse
+	33, // 52: mycel.v1.ControlService.UnfreezeAll:output_type -> mycel.v1.UnfreezeAllResponse
+	35, // 53: mycel.v1.ControlService.FreezeStatus:output_type -> mycel.v1.FreezeStatusResponse
+	41, // [41:54] is the sub-list for method output_type
+	28, // [28:41] is the sub-list for method input_type
+	28, // [28:28] is the sub-list for extension type_name
+	28, // [28:28] is the sub-list for extension extendee
+	0,  // [0:28] is the sub-list for field type_name
 }
 
 func init() { file_mycel_v1_grant_proto_init() }
@@ -3069,7 +3162,7 @@ func file_mycel_v1_grant_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_mycel_v1_grant_proto_rawDesc), len(file_mycel_v1_grant_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   47,
+			NumMessages:   48,
 			NumExtensions: 0,
 			NumServices:   2,
 		},

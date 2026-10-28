@@ -73,7 +73,7 @@ Open issues: the cross-platform acceptance needs a second machine; CI runners fo
 
 ## Phase 5 — Brokers, grants and approvals
 
-Status: in progress (merged: sharing, MCP/CLI, brokers, hub grants; daemon in review fixes; e2e next)
+Status: done locally (all packages merged; 5 phase-5 acceptance tests green on macOS in three consecutive runs, the whole suite 27 passed / 1 Lima skip in ~45 s; brokers tested against fakes only: no Docker engine or GPU on this machine; CI matrix pending the owner)
 
 | Package | Owns | Status | Notes |
 | --- | --- | --- | --- |
@@ -81,8 +81,8 @@ Status: in progress (merged: sharing, MCP/CLI, brokers, hub grants; daemon in re
 | P5-brokers | `internal/broker/ollama`, `internal/broker/gpu`, `internal/broker/docker` | merged | round 1 |
 | P5-sharing | `internal/sharing` (settings, effective computation, idle detectors per OS) | merged | round 1 |
 | P5-mcp-cli | `internal/adapters/mcp`, `internal/cli` (request_grant, grants/approve/deny/freeze/share commands) | merged | round 1 |
-| P5-daemon | `internal/daemon` (attach/detach, brokers lifecycle, ceiling enforcement, freeze, local controls, sandbox wiring of broker endpoints) | review fixes | round 2 |
-| P5-e2e | `test/**` | todo | round 3 |
+| P5-daemon | `internal/daemon` (attach/detach, brokers lifecycle, ceiling enforcement, freeze, local controls, sandbox wiring of broker endpoints) | merged | round 2 |
+| P5-e2e | `test/**` | merged | round 3 |
 
 Acceptance (from spec): an agent requests a GPU, an admin approves it in the hub UI and the lease expires on its own; a locally tightened setting rejects a hub grant even while the hub is offline; freezing everything stops all sandboxes within 5 seconds.
 
