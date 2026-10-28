@@ -44,6 +44,9 @@ func newTable(w io.Writer) *tabwriter.Writer {
 }
 
 func row(w io.Writer, cols ...string) {
+	for i, c := range cols {
+		cols[i] = cellText(c)
+	}
 	_, _ = fmt.Fprintln(w, strings.Join(cols, "\t"))
 }
 
@@ -142,4 +145,34 @@ func splitList(items []string) []string {
 		}
 	}
 	return out
+}
+
+// isControl reports C0 and C1 control characters (including DEL).
+func isControl(r rune) bool {
+	return r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f)
+}
+
+// termText strips C0/C1 controls except newline and tab from text that came
+// from the network before it is printed for a person (--json stays raw).
+func termText(s string) string {
+	return strings.Map(func(r rune) rune {
+		if r != '\n' && r != '\t' && isControl(r) {
+			return -1
+		}
+		return r
+	}, s)
+}
+
+// cellText makes a table cell one line: newline and tab become spaces and
+// other controls are dropped.
+func cellText(s string) string {
+	return strings.Map(func(r rune) rune {
+		switch {
+		case r == '\n' || r == '\t':
+			return ' '
+		case isControl(r):
+			return -1
+		}
+		return r
+	}, s)
 }

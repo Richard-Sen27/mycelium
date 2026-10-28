@@ -23,6 +23,11 @@ type hubClient struct {
 	tokens mycelv1connect.TokenServiceClient
 	nodes  mycelv1connect.NodeServiceClient
 	users  mycelv1connect.UserServiceClient
+	chans  mycelv1connect.ChannelServiceClient
+	agents mycelv1connect.AgentServiceClient
+	// stream is the channel service on an HTTP client without an overall
+	// timeout, for Watch.
+	stream mycelv1connect.ChannelServiceClient
 }
 
 const loginHint = "run `mycel login <hub-url> --api-key <key>`, or `mycel hub init` on the hub machine"
@@ -60,12 +65,17 @@ func newHubClient(hubURL, apiKey string, caPEM []byte) (*hubClient, error) {
 	if err != nil {
 		return nil, err
 	}
+	sc := *hc
+	sc.Timeout = 0
 	opts := connect.WithInterceptors(bearerInterceptor(apiKey))
 	return &hubClient{
 		url:    base,
 		tokens: mycelv1connect.NewTokenServiceClient(hc, base, opts),
 		nodes:  mycelv1connect.NewNodeServiceClient(hc, base, opts),
 		users:  mycelv1connect.NewUserServiceClient(hc, base, opts),
+		chans:  mycelv1connect.NewChannelServiceClient(hc, base, opts),
+		agents: mycelv1connect.NewAgentServiceClient(hc, base, opts),
+		stream: mycelv1connect.NewChannelServiceClient(&sc, base, opts),
 	}, nil
 }
 
@@ -96,14 +106,36 @@ func pinnedHTTPClient(caPEM []byte) (*http.Client, error) {
 	return &http.Client{Transport: tr, Timeout: 60 * time.Second}, nil
 }
 
-// bearerInterceptor sets the API key on every request. The key is never logged.
+// bearerInterceptor sets the API key on every request, unary and streaming.
+// The key is never logged.
 func bearerInterceptor(apiKey string) connect.Interceptor {
-	return connect.UnaryInterceptorFunc(func(next connect.UnaryFunc) connect.UnaryFunc {
-		return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
-			req.Header().Set("Authorization", "Bearer "+apiKey)
-			return next(ctx, req)
-		}
-	})
+	return bearer{header: "Bearer " + apiKey}
+}
+
+// bearer holds the Authorization header; String and GoString redact it so a
+// formatted value never prints the key.
+type bearer struct{ header string }
+
+func (bearer) String() string   { return "Bearer [redacted]" }
+func (bearer) GoString() string { return "bearer{[redacted]}" }
+
+func (b bearer) WrapUnary(next connect.UnaryFunc) connect.UnaryFunc {
+	return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
+		req.Header().Set("Authorization", b.header)
+		return next(ctx, req)
+	}
+}
+
+func (b bearer) WrapStreamingClient(next connect.StreamingClientFunc) connect.StreamingClientFunc {
+	return func(ctx context.Context, spec connect.Spec) connect.StreamingClientConn {
+		conn := next(ctx, spec)
+		conn.RequestHeader().Set("Authorization", b.header)
+		return conn
+	}
+}
+
+func (b bearer) WrapStreamingHandler(next connect.StreamingHandlerFunc) connect.StreamingHandlerFunc {
+	return next
 }
 
 // rpcError turns a Connect error into a message a person can act on.

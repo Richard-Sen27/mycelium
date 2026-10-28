@@ -25,6 +25,20 @@
 //	                 fetches <hub-url>/ca.pem, checks the fingerprint (asks if not given, unless --json), writes config.yaml
 //	mycel ui         prints (and tries to open) the local UI URL
 //
+// Phase 2 (agents and channels):
+//
+//	mycel mcp --agent <name> [--harness <name>] [--local-addr]   MCP server on stdio (internal/adapters/mcp)
+//	mycel hook --agent <name> [--local-addr]                     new inbox messages for harness hooks; always exits 0
+//	mycel agent setup <harness> --agent <name> [--dir .]         writes the harness config from harnesses/<harness>.yaml
+//	mycel agents ls [--local]
+//	mycel channels ls [--all] | create <name> [--type topic|task] [--max-hops N] [--rate N] [--open] [--members a,b]
+//	mycel channels get <name> | archive <name> | add <channel> <member> [--role r] | rm <channel> <member>
+//	mycel post <channel> <text> [--mentions a,b] [--reply-to id] [--thread id] [--type chat|task|result|event] [--tags t]
+//	mycel read <channel> [--limit 50] [--thread id] [--follow] [--quote]
+//	mycel bb get <channel> [key] | put <channel> <key> <value> [--expect-version n] | rm <channel> <key>
+//
+// A channel argument without "#", "@" or "dm:" gets a leading "#".
+//
 // Global flags: --json, --hub-url, --api-key (override config.yaml), -v.
 // Environment: MYCEL_HOME (see internal/config), MYCEL_API_KEY, MYCEL_HUB_URL.
 package cli
@@ -217,6 +231,14 @@ func (a *app) rootCmd() *cobra.Command {
 		a.whoamiCmd(),
 		a.loginCmd(),
 		a.uiCmd(),
+		a.mcpCmd(),
+		a.hookCmd(),
+		a.agentCmd(),
+		a.agentsCmd(),
+		a.channelsCmd(),
+		a.postCmd(),
+		a.readCmd(),
+		a.bbCmd(),
 	)
 	return root
 }

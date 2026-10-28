@@ -137,8 +137,26 @@ func (a *app) daemonCmd() *cobra.Command {
 					break waitReady
 				}
 			}
-			// A role may have reported ready just before stopping; select
-			// picks among ready cases at random, so collect what was sent.
+			printReady := func() {
+				if !waitHub && !waitNode && a.jsonOut {
+					if err := a.printJSONValue(out); err != nil {
+						a.log.Error("write ready line", "err", err)
+					}
+				}
+			}
+			if !waitHub && !waitNode {
+				printReady()
+				for running > 0 {
+					finish(<-done)
+				}
+				return daemonExit(results)
+			}
+			// Stopped early: wait for every role to return, then collect any
+			// ready reports that were sent before they stopped (select picks
+			// among ready cases at random).
+			for running > 0 {
+				finish(<-done)
+			}
 			select {
 			case r := <-hubReady:
 				onHubReady(r)
@@ -149,14 +167,7 @@ func (a *app) daemonCmd() *cobra.Command {
 				onNodeReady(r)
 			default:
 			}
-			if !waitHub && !waitNode && a.jsonOut {
-				if err := a.printJSONValue(out); err != nil {
-					a.log.Error("write ready line", "err", err)
-				}
-			}
-			for running > 0 {
-				finish(<-done)
-			}
+			printReady()
 			return daemonExit(results)
 		},
 	}

@@ -138,6 +138,7 @@ func (f *fakeHub) headers() []string {
 type testEnv struct {
 	srv   *httptest.Server
 	hub   *fakeHub
+	ch    *fakeChannels
 	home  string
 	caPEM string
 	fp    string
@@ -150,6 +151,9 @@ func newTestEnv(t *testing.T) *testEnv {
 	mux.Handle(mycelv1connect.NewTokenServiceHandler(fh))
 	mux.Handle(mycelv1connect.NewNodeServiceHandler(fh))
 	mux.Handle(mycelv1connect.NewUserServiceHandler(fh))
+	fc := &fakeChannels{hub: fh}
+	mux.Handle(mycelv1connect.NewChannelServiceHandler(fc))
+	mux.Handle(mycelv1connect.NewAgentServiceHandler(fc))
 	var caPEM []byte
 	mux.HandleFunc("GET /ca.pem", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write(caPEM) })
 	srv := httptest.NewTLSServer(mux)
@@ -161,7 +165,7 @@ func newTestEnv(t *testing.T) *testEnv {
 	t.Setenv(config.EnvHome, home)
 	t.Setenv(EnvHubURL, "")
 	t.Setenv(EnvAPIKey, "")
-	return &testEnv{srv: srv, hub: fh, home: home, caPEM: string(caPEM), fp: hex.EncodeToString(sum[:])}
+	return &testEnv{srv: srv, hub: fh, ch: fc, home: home, caPEM: string(caPEM), fp: hex.EncodeToString(sum[:])}
 }
 
 // writeConfig points the CLI at the test server.
