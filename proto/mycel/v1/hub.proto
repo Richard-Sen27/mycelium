@@ -146,7 +146,7 @@ message Agent {
   Budget budget = 12; // zero = unlimited
   Budget used = 13;
   int32 turns = 14;
-  string paused_reason = 15; // "budget: agent", "budget: channel", "kill switch", ""
+  string paused_reason = 15; // "budget: agent", "budget: channel", "operator", ""
   string exited_at = 16;
   int32 exit_code = 17;
 }

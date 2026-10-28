@@ -1120,7 +1120,7 @@ type Agent struct {
 	Budget        *Budget `protobuf:"bytes,12,opt,name=budget,proto3" json:"budget,omitempty"` // zero = unlimited
 	Used          *Budget `protobuf:"bytes,13,opt,name=used,proto3" json:"used,omitempty"`
 	Turns         int32   `protobuf:"varint,14,opt,name=turns,proto3" json:"turns,omitempty"`
-	PausedReason  string  `protobuf:"bytes,15,opt,name=paused_reason,json=pausedReason,proto3" json:"paused_reason,omitempty"` // "budget: agent", "budget: channel", "kill switch", ""
+	PausedReason  string  `protobuf:"bytes,15,opt,name=paused_reason,json=pausedReason,proto3" json:"paused_reason,omitempty"` // "budget: agent", "budget: channel", "operator", ""
 	ExitedAt      string  `protobuf:"bytes,16,opt,name=exited_at,json=exitedAt,proto3" json:"exited_at,omitempty"`
 	ExitCode      int32   `protobuf:"varint,17,opt,name=exit_code,json=exitCode,proto3" json:"exit_code,omitempty"`
 	unknownFields protoimpl.UnknownFields

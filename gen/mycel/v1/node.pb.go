@@ -1240,12 +1240,17 @@ func (*AgentExitedResponse) Descriptor() ([]byte, []int) {
 }
 
 type RegisterAgentResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	AgentId       string                 `protobuf:"bytes,1,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"` // "agent:<name>@<node>"
-	Token         string                 `protobuf:"bytes,2,opt,name=token,proto3" json:"token,omitempty"`                    // 1h agent token bound to node and sandbox
-	ExpiresAt     string                 `protobuf:"bytes,3,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	AgentId   string                 `protobuf:"bytes,1,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"` // "agent:<name>@<node>"
+	Token     string                 `protobuf:"bytes,2,opt,name=token,proto3" json:"token,omitempty"`                    // 1h agent token bound to node and sandbox
+	ExpiresAt string                 `protobuf:"bytes,3,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	// Phase 3: the agent's state after registration. A re-registered agent
+	// keeps an earlier pause; the node applies it locally at once.
+	State             string `protobuf:"bytes,4,opt,name=state,proto3" json:"state,omitempty"`                                                   // running, paused
+	PausedReason      string `protobuf:"bytes,5,opt,name=paused_reason,json=pausedReason,proto3" json:"paused_reason,omitempty"`                 // "budget: agent", "budget: channel", "operator", ""
+	FirstRegistration bool   `protobuf:"varint,6,opt,name=first_registration,json=firstRegistration,proto3" json:"first_registration,omitempty"` // false when the name was registered before
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *RegisterAgentResponse) Reset() {
@@ -1297,6 +1302,27 @@ func (x *RegisterAgentResponse) GetExpiresAt() string {
 		return x.ExpiresAt
 	}
 	return ""
+}
+
+func (x *RegisterAgentResponse) GetState() string {
+	if x != nil {
+		return x.State
+	}
+	return ""
+}
+
+func (x *RegisterAgentResponse) GetPausedReason() string {
+	if x != nil {
+		return x.PausedReason
+	}
+	return ""
+}
+
+func (x *RegisterAgentResponse) GetFirstRegistration() bool {
+	if x != nil {
+		return x.FirstRegistration
+	}
+	return false
 }
 
 type RefreshAgentTokenRequest struct {
@@ -1503,12 +1529,15 @@ const file_mycel_v1_node_proto_rawDesc = "" +
 	"\bagent_id\x18\x01 \x01(\tR\aagentId\x12\x1b\n" +
 	"\texit_code\x18\x02 \x01(\x05R\bexitCode\x12\x16\n" +
 	"\x06reason\x18\x03 \x01(\tR\x06reason\"\x15\n" +
-	"\x13AgentExitedResponse\"g\n" +
+	"\x13AgentExitedResponse\"\xd1\x01\n" +
 	"\x15RegisterAgentResponse\x12\x19\n" +
 	"\bagent_id\x18\x01 \x01(\tR\aagentId\x12\x14\n" +
 	"\x05token\x18\x02 \x01(\tR\x05token\x12\x1d\n" +
 	"\n" +
-	"expires_at\x18\x03 \x01(\tR\texpiresAt\"K\n" +
+	"expires_at\x18\x03 \x01(\tR\texpiresAt\x12\x14\n" +
+	"\x05state\x18\x04 \x01(\tR\x05state\x12#\n" +
+	"\rpaused_reason\x18\x05 \x01(\tR\fpausedReason\x12-\n" +
+	"\x12first_registration\x18\x06 \x01(\bR\x11firstRegistration\"K\n" +
 	"\x18RefreshAgentTokenRequest\x12\x19\n" +
 	"\bagent_id\x18\x01 \x01(\tR\aagentId\x12\x14\n" +
 	"\x05token\x18\x02 \x01(\tR\x05token\"P\n" +

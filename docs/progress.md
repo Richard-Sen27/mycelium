@@ -45,7 +45,7 @@ Status: in progress (round 1: hub, daemon spawn, MCP/CLI)
 | P3-hub | `internal/hub`, `internal/policy` | in progress | agent lifecycle, budgets, usage accounting, pause/resume/stop, AgentService phase 3 methods, paused-agent RPC refusals, EVENTs |
 | P3-daemon-spawn | `internal/daemon` | in progress | spawn endpoint, worker processes, usage parsers, AgentCtl, workers listing |
 | P3-mcp-cli | `internal/adapters/mcp`, `internal/cli`, `harnesses` | in progress | spawn_agent/list_workers/stop_agent tools, `mycel agents` lifecycle commands, spawn sections for claude-code, codex, gemini-cli, fake manifest, `mycel fakeharness` (build tag) |
-| P3-e2e | `test/**` | todo | orchestrator spawns two workers; exhausted budget pauses them |
+| P3-e2e | `test/**` | todo | orchestrator spawns two workers; exhausted budget pauses them; also folds in the phase 2 test review fixes (bus refusal check, race reports from children, explicit ping-pong chain, #alerts reason, goroutine and port hygiene) |
 
 Acceptance (from spec): an orchestrator spawns two local workers that join a channel and report results; an exhausted budget pauses them.
 

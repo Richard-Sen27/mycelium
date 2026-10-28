@@ -144,6 +144,11 @@ message RegisterAgentResponse {
   string agent_id = 1; // "agent:<name>@<node>"
   string token = 2; // 1h agent token bound to node and sandbox
   string expires_at = 3;
+  // Phase 3: the agent's state after registration. A re-registered agent
+  // keeps an earlier pause; the node applies it locally at once.
+  string state = 4; // running, paused
+  string paused_reason = 5; // "budget: agent", "budget: channel", "operator", ""
+  bool first_registration = 6; // false when the name was registered before
 }
 
 message RefreshAgentTokenRequest {
