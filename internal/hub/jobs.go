@@ -483,7 +483,7 @@ func (s *server) validateJobSpec(ctx context.Context, a actor, in *mycelv1.JobSp
 			return nil, nil, err
 		}
 		if in.GetPath() == "" {
-			in.Path = "inputs/" + art.Name
+			in.Path = "inputs/" + path.Base(art.Name)
 		}
 		if !validRelPath(in.GetPath()) {
 			return nil, nil, invalidArg("input %s: path %q must be relative to /workspace without '..'", in.GetArtifact(), in.GetPath())

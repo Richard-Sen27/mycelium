@@ -635,7 +635,9 @@ func (s *store) artifactBytes(ctx context.Context, owner, node string) (int64, e
 	var n sql.NullInt64
 	var err error
 	if node != "" {
-		err = s.db.QueryRowContext(ctx, `SELECT SUM(size) FROM artifacts WHERE created_by = ? AND job_id = ''`, "node:"+node).Scan(&n)
+		// The node's own uploads and those it made for its agents.
+		err = s.db.QueryRowContext(ctx, `SELECT SUM(size) FROM artifacts WHERE job_id = '' AND (created_by = ? OR created_by LIKE ?)`,
+			"node:"+node, "agent:%@"+node).Scan(&n)
 	} else {
 		err = s.db.QueryRowContext(ctx, `SELECT SUM(size) FROM artifacts WHERE owner_id = ?`, owner).Scan(&n)
 	}

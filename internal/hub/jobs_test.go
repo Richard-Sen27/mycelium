@@ -396,7 +396,7 @@ func TestJobsEndToEnd(t *testing.T) {
 		t.Fatalf("input upload: %d %+v", code, input)
 	}
 	unrelated, _ := putBytes(t, e.aliceHTTP, base, e.aliceKey, "name=other.bin", []byte{0, 1, 2})
-	for _, bad := range []string{".hidden", "a/b", "a%5Cb", "a%07b", ""} {
+	for _, bad := range []string{".hidden", "..%2Fx", "%2Fabs", "a%2F.hidden", "a%2F%2Fb", "a%5Cb", "a%07b", ""} {
 		if _, code := putBytes(t, e.aliceHTTP, base, e.aliceKey, "name="+bad, []byte("x")); code != http.StatusBadRequest {
 			t.Errorf("name %q: %d", bad, code)
 		}
@@ -1340,12 +1340,13 @@ func TestJobSpecHelpers(t *testing.T) {
 	if got := cleanText("ééé", 3); got != "é" {
 		t.Errorf("cleanText cut: %q", got)
 	}
-	for _, n := range []string{"report.txt", "a b.tar.gz"} {
+	for _, n := range []string{"report.txt", "a b.tar.gz", "out/r.txt", "a/b/c.d"} {
 		if !validArtifactName(n) {
 			t.Errorf("rejected name %q", n)
 		}
 	}
-	for _, n := range []string{"", ".env", "..", "a/b", "a\\b", "a\x01b", strings.Repeat("x", 257)} {
+	for _, n := range []string{"", ".env", "..", "../x", "/abs", "a/.hidden", "a/./b", "a/../b", "a//b", "a/",
+		"a\\b", "a\x01b", "a/\u2028", strings.Repeat("x", 257)} {
 		if validArtifactName(n) {
 			t.Errorf("accepted name %q", n)
 		}

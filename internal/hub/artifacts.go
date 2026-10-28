@@ -9,6 +9,7 @@ import (
 	"mime"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -91,8 +92,41 @@ func httpError(w http.ResponseWriter, code int, msg string) {
 // validArtifactName: a plain file name of 1-256 printable bytes, without
 // path separators and not starting with a dot.
 func validArtifactName(n string) bool {
-	return n != "" && len(n) <= maxArtifactName && channels.IsPrintable(n) &&
-		!strings.ContainsAny(n, "/\\") && !strings.HasPrefix(n, ".")
+	if n == "" || len(n) > maxArtifactName || !channels.IsPrintable(n) || strings.Contains(n, "\\") {
+		return false
+	}
+	// A relative slash path (job outputs keep their directories): no empty,
+	// "." or ".." components and none starting with a dot.
+	for _, c := range strings.Split(n, "/") {
+		if c == "" || strings.HasPrefix(c, ".") {
+			return false
+		}
+	}
+	return true
+}
+
+// liveNodeAgent resolves an agent id named by a node in a request: it must be
+// agent:<name>@<node> for this node and name a live (registered, not
+// revoked, not stopped) agent. The returned actor applies the agent's own
+// visibility.
+func (s *server) liveNodeAgent(ctx context.Context, node, id string) (actor, bool, error) {
+	if !strings.HasPrefix(id, "agent:") || !strings.HasSuffix(id, "@"+node) || !channels.ValidParticipant(id) {
+		return actor{}, false, nil
+	}
+	ag, err := s.st.getAgent(ctx, id)
+	if errors.Is(err, errNotFound) {
+		return actor{}, false, nil
+	}
+	if err != nil {
+		return actor{}, false, err
+	}
+	if ag.NodeName != node || ag.RevokedAt != "" || ag.State == stateStopped {
+		return actor{}, false, nil
+	}
+	return actor{
+		id: ag.ID, p: policy.Principal{Kind: policy.KindAgent, ID: ag.ID, OwnerID: ag.OwnerID},
+		origin: originAgent, node: ag.NodeName, sandbox: ag.SandboxID,
+	}, true, nil
 }
 
 // ---- upload slots and quota reservations ----
@@ -170,8 +204,26 @@ func (s *server) handleArtifactPut(w http.ResponseWriter, r *http.Request) {
 		httpError(w, code, reason)
 	}
 	if !validArtifactName(name) {
-		httpError(w, http.StatusBadRequest, "invalid name: 1-256 printable bytes, no '/' or '\\', not starting with '.'")
+		httpError(w, http.StatusBadRequest, "invalid name: a relative path of 1-256 printable bytes, no '\\', '.' or '..' components or components starting with '.'")
 		return
+	}
+	createdBy := q.Get("created_by")
+	var agentActor *actor
+	if createdBy != "" {
+		if c.node == nil {
+			httpError(w, http.StatusBadRequest, "created_by is only for node uploads on behalf of an agent")
+			return
+		}
+		a, ok, err := s.liveNodeAgent(ctx, c.node.Name, createdBy)
+		if err != nil {
+			httpError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+		if !ok {
+			deny(http.StatusForbidden, "created_by must name a live agent on this node")
+			return
+		}
+		agentActor = &a
 	}
 	if jobID != "" && !validJobID(jobID) {
 		httpError(w, http.StatusBadRequest, "invalid job id")
@@ -224,6 +276,10 @@ func (s *server) handleArtifactPut(w http.ResponseWriter, r *http.Request) {
 		}
 	} else {
 		row.OwnerID, row.CreatedBy = c.node.OwnerID, "node:"+c.node.Name
+		if agentActor != nil {
+			// The daemon exports on behalf of one of its agents.
+			row.OwnerID, row.CreatedBy = agentActor.p.OwnerID, agentActor.id
+		}
 		if jobID != "" {
 			// Job outputs: the job runs on this enrolment of the node right
 			// now; they belong to the job's owner and go to its channel.
@@ -250,14 +306,21 @@ func (s *server) handleArtifactPut(w http.ResponseWriter, r *http.Request) {
 			}
 			row.OwnerID, channel = j.OwnerID, j.Spec.GetChannel()
 		} else {
+			// Not tied to a job: counts against the node's quota too.
 			nodeQuotaKey = c.node.Name
 			if channel != "" {
-				owner, err := s.st.getUser(ctx, c.node.OwnerID)
-				if err != nil {
-					deny(http.StatusForbidden, "node owner not found")
-					return
+				// The agent's own read access, or the node owner's.
+				reader := agentActor
+				if reader == nil {
+					owner, err := s.st.getUser(ctx, c.node.OwnerID)
+					if err != nil {
+						deny(http.StatusForbidden, "node owner not found")
+						return
+					}
+					ua := userActor(owner)
+					reader = &ua
 				}
-				ok, err := s.canReadChannel(ctx, userActor(owner), channel)
+				ok, err := s.canReadChannel(ctx, *reader, channel)
 				if err != nil {
 					httpError(w, http.StatusInternalServerError, "internal error")
 					return
@@ -475,6 +538,24 @@ func (s *server) handleArtifactGet(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		allowed, reason = d.Allow, d.Reason
+	} else if hdr := r.Header.Get("Mycel-Agent"); hdr != "" {
+		// The daemon fetches for one of its agents: the agent's visibility.
+		a, ok, err := s.liveNodeAgent(ctx, c.node.Name, hdr)
+		if err != nil {
+			httpError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+		if !ok {
+			s.auditDenied(ctx, c.id(), string(policy.ActionArtifactGet), "artifact:"+id, map[string]any{"reason": "Mycel-Agent is not a live agent of this node", "agent": hdr})
+			httpError(w, http.StatusForbidden, "Mycel-Agent must name a live agent on this node")
+			return
+		}
+		d, err := s.artifactDecision(ctx, a, policy.ActionArtifactGet, art)
+		if err != nil {
+			httpError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+		allowed, reason = d.Allow, d.Reason
 	} else {
 		allowed, err = s.nodeMayFetch(ctx, c.node.Name, id)
 		if err != nil {
@@ -505,7 +586,7 @@ func (s *server) handleArtifactGet(w http.ResponseWriter, r *http.Request) {
 	h.Set("ETag", `"`+art.SHA256+`"`)
 	h.Set("Mycel-Artifact-Sha256", art.SHA256)
 	h.Set("Mycel-Media-Type", art.MediaType)
-	if cd := mime.FormatMediaType("attachment", map[string]string{"filename": art.Name}); cd != "" {
+	if cd := mime.FormatMediaType("attachment", map[string]string{"filename": path.Base(art.Name)}); cd != "" {
 		h.Set("Content-Disposition", cd)
 	} else {
 		h.Set("Content-Disposition", "attachment")
