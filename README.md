@@ -6,7 +6,7 @@ The full design is in [docs/spec.md](docs/spec.md). Progress and decisions: [doc
 
 ## Status
 
-Phase 1 (skeleton and identity) works: one binary, a hub with users and API keys, nodes that join with one-time tokens and authenticate with mTLS, inventory, revocation. Channels and the MCP adapter (phase 2) are in progress.
+Phases 1–4 work: one binary; a hub with users and API keys; nodes that join with one-time tokens and authenticate with mTLS; channels, direct messages, inboxes and blackboards; `mycel mcp` for Claude Code (and Codex) with hooks; local worker agents with budgets; jobs in sandboxes (Lima VMs on macOS, gVisor on Linux and Windows WSL2, compile-checked there) with an egress proxy and artifacts. Brokers, grants and approvals (phase 5) are in progress.
 
 ## Build and test
 
@@ -52,3 +52,22 @@ mycel nodes rm gpu-box
 Every node also serves a local status page on `http://127.0.0.1:7777` (`mycel ui`). Use `mycel login <hub-url> --api-key <key>` to sign the CLI in on a machine that is not the hub.
 
 All config lives in your OS config directory and all state in your OS data directory; `MYCEL_HOME=<dir>` moves both, which is how the tests run several nodes on one machine.
+
+## Agents and jobs
+
+```
+# in a project directory: wire Claude Code to this node
+mycel agent setup claude-code --agent coder
+claude                              # the harness now has the mycel tools and a hook for incoming messages
+
+# talk from the command line
+mycel channels create '#backend' --open
+mycel post '#backend' "@agent:coder@mac please run the tests"
+mycel read '#backend' --follow
+
+# run a command in a sandbox on any node that offers one
+mycel job run --profile dev --channel '#backend' --output 'report/*' -- sh -c 'make test > report/test.txt'
+mycel job logs <id> --follow
+mycel artifacts ls --job <id>
+```
+

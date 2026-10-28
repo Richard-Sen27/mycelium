@@ -53,7 +53,7 @@ Open issues: none.
 
 ## Phase 4 — Sandboxes and jobs
 
-Status: in progress (all implementation packages merged; P4-e2e in progress)
+Status: done locally (all packages merged; 6 fake-backend acceptance tests green on macOS, the Lima isolation suite green on this Mac; Linux and Windows backends compile-checked only; the cross-machine Mac↔Windows run needs a second machine)
 
 | Package | Owns | Status | Notes |
 | --- | --- | --- | --- |
@@ -65,7 +65,7 @@ Status: in progress (all implementation packages merged; P4-e2e in progress)
 | P4-applevf | `internal/sandbox/applevf` (Lima) | merged | both Lima integration tests (default profile, nested rootless Docker) pass on this Mac |
 | P4-wsl2 | `internal/sandbox/wsl2` (same agent as gvisor) | merged | untested here: no Windows machine |
 | P4-gvisor | `internal/sandbox/gvisor` (+ firecracker stub) | merged | untested here: no Linux machine |
-| P4-e2e | `test/**` | in progress | round 3; fake backend in CI, real backend isolation tests behind an env flag |
+| P4-e2e | `test/**` | merged | round 3; fake backend in CI, real backend isolation tests behind an env flag |
 
 Acceptance (from spec): `mycel job run --profile dev -- <cmd>` started on a Mac runs on a Windows node and the other way round; tests assert a job cannot read the host's home directory, cannot reach a domain outside the allowlist, and cannot see host processes.
 
@@ -73,14 +73,14 @@ Open issues: the cross-platform acceptance needs a second machine; CI runners fo
 
 ## Phase 5 — Brokers, grants and approvals
 
-Status: contracts merged (D024); implementation starts when phase 4 acceptance passes
+Status: in progress (round 1: hub grants, brokers, sharing, MCP/CLI)
 
 | Package | Owns | Status | Notes |
 | --- | --- | --- | --- |
-| P5-hub-grants | `internal/hub`, `internal/policy` (grants, approvals, auto rules, sharing, freezes, approvals page, agent/node RPCs) | todo | round 1 |
-| P5-brokers | `internal/broker/ollama`, `internal/broker/gpu`, `internal/broker/docker` | todo | round 1 |
-| P5-sharing | `internal/sharing` (settings, effective computation, idle detectors per OS) | todo | round 1 |
-| P5-mcp-cli | `internal/adapters/mcp`, `internal/cli` (request_grant, grants/approve/deny/freeze/share commands) | todo | round 1 |
+| P5-hub-grants | `internal/hub`, `internal/policy` (grants, approvals, auto rules, sharing, freezes, approvals page, agent/node RPCs) | in progress | round 1 |
+| P5-brokers | `internal/broker/ollama`, `internal/broker/gpu`, `internal/broker/docker` | in progress | round 1 |
+| P5-sharing | `internal/sharing` (settings, effective computation, idle detectors per OS) | in progress | round 1 |
+| P5-mcp-cli | `internal/adapters/mcp`, `internal/cli` (request_grant, grants/approve/deny/freeze/share commands) | in progress | round 1 |
 | P5-daemon | `internal/daemon` (attach/detach, brokers lifecycle, ceiling enforcement, freeze, local controls, sandbox wiring of broker endpoints) | todo | round 2 |
 | P5-e2e | `test/**` | todo | round 3 |
 
