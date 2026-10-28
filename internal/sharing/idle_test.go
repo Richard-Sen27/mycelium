@@ -86,8 +86,8 @@ func TestIoregDetector(t *testing.T) {
 		"bad output":    {run: func(context.Context, string, ...string) ([]byte, error) { return []byte("nothing"), nil }, exists: sbin, lookPath: noPath},
 	}
 	for name, d := range failures {
-		if got, err := d.IdleFor(); got != 0 || err != nil {
-			t.Errorf("%s: IdleFor = %v, %v; want 0, nil", name, got, err)
+		if got, err := d.IdleFor(); got != 0 || !errors.Is(err, ErrUnknownIdle) {
+			t.Errorf("%s: IdleFor = %v, %v; want 0, ErrUnknownIdle", name, got, err)
 		}
 	}
 }
@@ -196,15 +196,22 @@ func TestLinuxDetector(t *testing.T) {
 		{"no active session falls back", fakeCmds{have: map[string]bool{"loginctl": true, "xprintidle": true}, out: map[string]string{seat: "\n", xp: "90000\n"}}, 90 * time.Second},
 		{"loginctl fails falls back", fakeCmds{have: map[string]bool{"loginctl": true, "xprintidle": true}, err: map[string]error{seat: errors.New("no seat")}, out: map[string]string{xp: "5000"}}, 5 * time.Second},
 		{"xprintidle only", fakeCmds{have: map[string]bool{"xprintidle": true}, out: map[string]string{xp: "60000"}}, time.Minute},
-		{"xprintidle garbage", fakeCmds{have: map[string]bool{"xprintidle": true}, out: map[string]string{xp: "couldn't open display"}}, 0},
-		{"dash session id rejected", fakeCmds{have: map[string]bool{"loginctl": true}, out: map[string]string{seat: "--help\n", "/usr/bin/loginctl show-session --help -p IdleHint -p IdleSinceHint": idleOut}}, 0},
-		{"nothing", fakeCmds{}, 0},
+		{"xprintidle garbage", fakeCmds{have: map[string]bool{"xprintidle": true}, out: map[string]string{xp: "couldn't open display"}}, -1},
+		{"dash session id rejected", fakeCmds{have: map[string]bool{"loginctl": true}, out: map[string]string{seat: "--help\n", "/usr/bin/loginctl show-session --help -p IdleHint -p IdleSinceHint": idleOut}}, -1},
+		{"nothing", fakeCmds{}, -1},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			f := tt.f
 			d := linuxDetector{run: f.run, exists: f.exists, lookPath: f.lookPath, now: func() time.Time { return now }}
 			got, err := d.IdleFor()
+			if tt.want < 0 {
+				// -1 marks "cannot tell": the detector reports ErrUnknownIdle.
+				if !errors.Is(err, ErrUnknownIdle) || got != 0 {
+					t.Fatalf("IdleFor = %v, %v; want ErrUnknownIdle (ran %v)", got, err, f.ran)
+				}
+				return
+			}
 			if err != nil || got != tt.want {
 				t.Fatalf("IdleFor = %v, %v; want %v (ran %v)", got, err, tt.want, f.ran)
 			}
@@ -230,8 +237,8 @@ func TestNewIdleDetector(t *testing.T) {
 	if el := time.Since(start); el > IdleTimeout+time.Second {
 		t.Fatalf("IdleFor took %v", el)
 	}
-	if v, err := (nopDetector{}).IdleFor(); v != 0 || err != nil {
-		t.Fatalf("nop = %v, %v", v, err)
+	if v, err := (nopDetector{}).IdleFor(); v != 0 || !errors.Is(err, ErrUnknownIdle) {
+		t.Fatalf("nop = %v, %v; want ErrUnknownIdle", v, err)
 	}
 	_ = newLinuxDetector()
 	_ = newIoregDetector()

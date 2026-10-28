@@ -74,13 +74,13 @@ func resolveTool(exists func(string) bool, lookPath func(string) (string, error)
 }
 
 func warnNotIdle(msg string, args ...any) {
-	slog.Default().Warn("sharing: idle detection: "+msg+"; treating the owner as active", args...)
+	slog.Default().Warn("sharing: idle detection: "+msg+"; idle state unknown", args...)
 }
 
 // nopDetector cannot tell and reports 0 (never idle).
 type nopDetector struct{}
 
-func (nopDetector) IdleFor() (time.Duration, error) { return 0, nil }
+func (nopDetector) IdleFor() (time.Duration, error) { return 0, ErrUnknownIdle }
 
 // ioregDetector reads the macOS HID idle time from ioreg. Failures are
 // logged and reported as 0 (never idle).
@@ -98,19 +98,19 @@ func (d ioregDetector) IdleFor() (time.Duration, error) {
 	tool := resolveTool(d.exists, d.lookPath, "/usr/sbin/ioreg", "ioreg")
 	if tool == "" {
 		warnNotIdle("ioreg not found")
-		return 0, nil
+		return 0, ErrUnknownIdle
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), IdleTimeout)
 	defer cancel()
 	out, err := d.run(ctx, tool, "-c", "IOHIDSystem", "-d", "4")
 	if err != nil {
 		warnNotIdle("ioreg failed", "err", err)
-		return 0, nil
+		return 0, ErrUnknownIdle
 	}
 	idle, err := parseIoreg(out)
 	if err != nil {
 		warnNotIdle("ioreg output", "err", err)
-		return 0, nil
+		return 0, ErrUnknownIdle
 	}
 	return idle, nil
 }
@@ -173,7 +173,7 @@ func (d linuxDetector) IdleFor() (time.Duration, error) {
 			}
 		}
 	}
-	return 0, nil
+	return 0, ErrUnknownIdle
 }
 
 // logind returns the idle time of seat0's active session; ok is false when

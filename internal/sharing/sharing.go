@@ -237,8 +237,17 @@ func ActiveAt(s *mycelv1.SharingSettings, t time.Time, idleFor time.Duration) bo
 // at most IdleTimeout. Every implementation here fails safe: when it cannot
 // tell it logs a warning and reports 0 (never idle) with a nil error.
 type IdleDetector interface {
+	// IdleFor returns how long the owner has been idle. A detector that
+	// cannot tell (no interactive session, missing tool, unparsable output)
+	// returns ErrUnknownIdle; callers must then neither treat the owner as
+	// idle (sharing with when=idle stays inactive) nor as active
+	// (local_first does not pause anything).
 	IdleFor() (time.Duration, error)
 }
+
+// ErrUnknownIdle is returned by detectors that cannot tell whether the
+// owner is idle.
+var ErrUnknownIdle = errors.New("sharing: idle state unknown")
 
 // activity is the set of (minute of week, owner idle) pairs a setting
 // allows: never, or idle-required and/or restricted to the minutes in w

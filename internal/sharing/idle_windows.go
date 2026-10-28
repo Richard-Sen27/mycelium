@@ -28,7 +28,7 @@ type lastInputInfo struct {
 // NewIdleDetector returns the platform detector: GetLastInputInfo on
 // Windows. GetLastInputInfo only sees input of the calling process's own
 // session, so the detector must run in the owner's interactive session; in
-// session 0 (a Windows service) it logs a warning and reports 0 (never
+// session 0 (a Windows service) it logs a warning and reports ErrUnknownIdle (never
 // idle), the safe side. The calls return at once, well within IdleTimeout.
 func NewIdleDetector() IdleDetector { return lastInputDetector{} }
 
@@ -38,17 +38,17 @@ func (lastInputDetector) IdleFor() (time.Duration, error) {
 	var session uint32
 	if err := windows.ProcessIdToSessionId(windows.GetCurrentProcessId(), &session); err != nil {
 		warnNotIdle("ProcessIdToSessionId failed", "err", err)
-		return 0, nil
+		return 0, ErrUnknownIdle
 	}
 	if session == 0 {
 		session0Once.Do(func() { warnNotIdle("running in session 0, not in the owner's interactive session") })
-		return 0, nil
+		return 0, ErrUnknownIdle
 	}
 	info := lastInputInfo{cbSize: uint32(unsafe.Sizeof(lastInputInfo{}))}
 	r, _, err := procGetLastInputInfo.Call(uintptr(unsafe.Pointer(&info))) // #nosec G103 -- Win32 call with a LASTINPUTINFO
 	if r == 0 {
 		warnNotIdle("GetLastInputInfo failed", "err", err)
-		return 0, nil
+		return 0, ErrUnknownIdle
 	}
 	now, _, _ := procGetTickCount.Call()
 	// Both are 32-bit millisecond tick counts; unsigned subtraction handles
