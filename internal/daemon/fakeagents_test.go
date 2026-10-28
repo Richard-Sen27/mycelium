@@ -35,6 +35,57 @@ type fakeAgents struct {
 	calls      []fakeCall
 	inbox      []*mycelv1.Message
 	changed    chan struct{} // closed and replaced when inbox grows
+
+	// Phase 3 lifecycle reports.
+	regReqs      []*mycelv1.RegisterAgentRequest
+	usageReqs    []*mycelv1.AgentUsageRequest
+	exitedReqs   []*mycelv1.AgentExitedRequest
+	pauseOnUsage bool // answer agent.usage with paused: true
+	// registerPaused, if set, is the paused_reason of every register reply
+	// (state "paused").
+	registerPaused string
+	usageErr       string // if set, the answer to every agent.usage
+	usageAttempts  int
+}
+
+// registered returns the last register request for agent name.
+func (f *fakeAgents) registered(name string) *mycelv1.RegisterAgentRequest {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for i := len(f.regReqs) - 1; i >= 0; i-- {
+		if f.regReqs[i].GetAgentName() == name {
+			return f.regReqs[i]
+		}
+	}
+	return nil
+}
+
+// usageTotals sums the usage reports for agentID.
+func (f *fakeAgents) usageTotals(agentID string) (tokens int64, usd float64, turns int32, reports int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, u := range f.usageReqs {
+		if u.GetAgentId() == agentID {
+			tokens += u.GetTokens()
+			usd += u.GetUsd()
+			turns += u.GetTurns()
+			reports++
+		}
+	}
+	return
+}
+
+// exits returns the exit reports for agentID.
+func (f *fakeAgents) exits(agentID string) []*mycelv1.AgentExitedRequest {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []*mycelv1.AgentExitedRequest
+	for _, e := range f.exitedReqs {
+		if e.GetAgentId() == agentID {
+			out = append(out, e)
+		}
+	}
+	return out
 }
 
 // fakeCall records an agent RPC as the hub saw it.
@@ -191,7 +242,9 @@ func (f *fakeAgents) serve(node, method string, data []byte) (proto.Message, str
 		id := "agent:" + req.GetAgentName() + "@" + node
 		f.mu.Lock()
 		f.registers++
+		f.regReqs = append(f.regReqs, req)
 		revoked := f.revoked[id]
+		pausedReason := f.registerPaused
 		f.mu.Unlock()
 		if revoked {
 			return nil, "agent revoked; register under another name"
@@ -200,7 +253,11 @@ func (f *fakeAgents) serve(node, method string, data []byte) (proto.Message, str
 		if err != nil {
 			return nil, "internal error"
 		}
-		return &mycelv1.RegisterAgentResponse{AgentId: id, Token: tok, ExpiresAt: exp}, ""
+		resp := &mycelv1.RegisterAgentResponse{AgentId: id, Token: tok, ExpiresAt: exp, State: "running"}
+		if pausedReason != "" {
+			resp.State, resp.PausedReason = "paused", pausedReason
+		}
+		return resp, ""
 	case bus.RPCRefreshAgentToken:
 		req := &mycelv1.RefreshAgentTokenRequest{}
 		if proto.Unmarshal(data, req) != nil {
@@ -308,6 +365,30 @@ func (f *fakeAgents) serve(node, method string, data []byte) (proto.Message, str
 				return &mycelv1.InboxPullResponse{NextSeq: req.GetAfterSeq()}, ""
 			}
 		}
+	case bus.RPCAgentUsage:
+		req := &mycelv1.AgentUsageRequest{}
+		if proto.Unmarshal(data, req) != nil {
+			return nil, "invalid_argument: malformed request"
+		}
+		f.mu.Lock()
+		f.usageAttempts++
+		if e := f.usageErr; e != "" {
+			f.mu.Unlock()
+			return nil, e
+		}
+		f.usageReqs = append(f.usageReqs, req)
+		paused := f.pauseOnUsage
+		f.mu.Unlock()
+		return &mycelv1.AgentUsageResponse{Paused: paused}, ""
+	case bus.RPCAgentExited:
+		req := &mycelv1.AgentExitedRequest{}
+		if proto.Unmarshal(data, req) != nil {
+			return nil, "invalid_argument: malformed request"
+		}
+		f.mu.Lock()
+		f.exitedReqs = append(f.exitedReqs, req)
+		f.mu.Unlock()
+		return &mycelv1.AgentExitedResponse{}, ""
 	default:
 		if strings.HasPrefix(method, "agent.") {
 			return nil, "unimplemented: " + method

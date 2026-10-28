@@ -48,6 +48,14 @@ type runConfig struct {
 	shutdownGrace   time.Duration
 	// agentRetryEvery is the retry delay after a failed agent token refresh.
 	agentRetryEvery time.Duration
+	// usageReportEvery is how often worker usage is reported to the hub.
+	usageReportEvery time.Duration
+	// workerKillGrace is the time between SIGTERM and SIGKILL for a worker.
+	workerKillGrace time.Duration
+	// workerKeep is how long an exited worker stays in the listing.
+	workerKeep time.Duration
+	// workerStartHook, if set, runs just before a worker process starts (tests).
+	workerStartHook func(name string)
 	probe           func(context.Context) (*mycelv1.Inventory, error)
 	// onState, if set, is called with every state change (tests).
 	onState func(string)
@@ -57,14 +65,17 @@ type runConfig struct {
 
 func defaultRunConfig() runConfig {
 	return runConfig{
-		heartbeatEvery:  5 * time.Second,
-		probeEvery:      60 * time.Second,
-		probeTimeout:    15 * time.Second,
-		renewCheckEvery: time.Hour,
-		renewRetryEvery: 10 * time.Minute,
-		shutdownGrace:   2 * time.Second,
-		agentRetryEvery: 10 * time.Second,
-		probe:           inventory.Probe,
+		heartbeatEvery:   5 * time.Second,
+		probeEvery:       60 * time.Second,
+		probeTimeout:     15 * time.Second,
+		renewCheckEvery:  time.Hour,
+		renewRetryEvery:  10 * time.Minute,
+		shutdownGrace:    2 * time.Second,
+		agentRetryEvery:  10 * time.Second,
+		usageReportEvery: 5 * time.Second,
+		workerKillGrace:  5 * time.Second,
+		workerKeep:       time.Hour,
+		probe:            inventory.Probe,
 	}
 }
 
@@ -101,7 +112,8 @@ type node struct {
 
 	kick chan struct{} // asks the heartbeat loop for an immediate beat
 
-	local *localAPI // local API and agent sessions; set by run
+	local     *localAPI // local API and agent sessions; set by run
+	localAddr string    // bound local API address; set by run before serving
 
 	revokedOnce  sync.Once
 	revokedCh    chan struct{}
@@ -136,6 +148,7 @@ func run(ctx context.Context, opts Options, ready chan<- Ready, cfg runConfig) e
 		_ = ln.Close()
 		return fmt.Errorf("local listener bound to %s, which is not a loopback address; the local UI is never exposed", ln.Addr())
 	}
+	n.localAddr = ln.Addr().String()
 	if n.local, err = newLocalAPI(n); err != nil {
 		_ = ln.Close()
 		return err
@@ -179,6 +192,9 @@ func run(ctx context.Context, opts Options, ready chan<- Ready, cfg runConfig) e
 		result = err
 	}
 
+	// Workers end with the daemon (and on revocation); their exits are
+	// reported while the bus may still be up.
+	n.local.stopAllWorkers(exitKilled)
 	cancel()
 	// Agent sessions end with the daemon (and on revocation); the cursors
 	// under AgentsDir stay.
@@ -469,6 +485,10 @@ func (n *node) handleCtl(nc *nats.Conn, m *nats.Msg) {
 		case *mycelv1.CtlRequest_Shutdown:
 			n.log.Info("hub asked node to shut down", "reason", cmd.Shutdown.GetReason())
 			after = n.triggerShutdown
+		case *mycelv1.CtlRequest_Agent:
+			if e := n.local.agentCtl(cmd.Agent); e != "" {
+				resp = &mycelv1.CtlResponse{Error: e}
+			}
 		case *mycelv1.CtlRequest_Revoked:
 			n.log.Warn("hub revoked node", "reason", cmd.Revoked.GetReason())
 			after = n.triggerRevoked

@@ -82,11 +82,41 @@ type agentSession struct {
 	since   time.Time
 	cancel  context.CancelFunc
 	kick    chan struct{} // asks the refresh loop to refresh now
+	// reg is the register request used to register the agent again when
+	// its token has lapsed (workers keep parent, home channel and budget).
+	reg    *mycelv1.RegisterAgentRequest
+	worker bool // the session of a local worker spawned by this daemon
 
-	mu        sync.Mutex
-	token     string
-	issued    time.Time // local receipt time of token
-	expiresAt time.Time
+	mu          sync.Mutex
+	token       string
+	issued      time.Time // local receipt time of token
+	expiresAt   time.Time
+	paused      bool
+	pauseReason string
+}
+
+// setPaused sets or clears the pause flag.
+func (s *agentSession) setPaused(paused bool, reason string) {
+	s.mu.Lock()
+	s.paused, s.pauseReason = paused, reason
+	if !paused {
+		s.pauseReason = ""
+	}
+	s.mu.Unlock()
+}
+
+func (s *agentSession) pauseState() (bool, string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.paused, s.pauseReason
+}
+
+// pausedAllowed are the methods a paused agent may still call.
+var pausedAllowed = map[string]bool{
+	bus.RPCAgentWhoami:       true,
+	bus.RPCAgentListChannels: true,
+	bus.RPCAgentListMessages: true,
+	bus.RPCAgentBBGet:        true,
 }
 
 func (s *agentSession) setToken(token, expiresAt string) {
@@ -146,6 +176,7 @@ type localAPI struct {
 	closed   bool
 	sessions map[string]*agentSession // by session id
 	byName   map[string]*agentSession
+	workers  map[string]*worker // by agent name, including exited ones for a while
 
 	cursorMu sync.Mutex // guards cursor read-modify-write
 }
@@ -207,6 +238,7 @@ func newLocalAPI(n *node) (*localAPI, error) {
 		n: n, log: n.log.With("component", "local"), token: tok, tokenPath: path,
 		ctx: ctx, cancel: cancel,
 		sessions: map[string]*agentSession{}, byName: map[string]*agentSession{},
+		workers: map[string]*worker{},
 	}, nil
 }
 
@@ -259,6 +291,9 @@ func (l *localAPI) register(mux *http.ServeMux) {
 	lm.HandleFunc("GET /api/local/agents", l.handleList)
 	lm.HandleFunc("DELETE /api/local/agents/{session}", l.handleDelete)
 	lm.HandleFunc("POST /api/local/agents/{session}/rpc/{method}", l.handleRPC)
+	lm.HandleFunc("POST /api/local/agents/{session}/spawn", l.handleSpawn)
+	lm.HandleFunc("GET /api/local/workers", l.handleWorkers)
+	lm.HandleFunc("DELETE /api/local/workers/{agent}", l.handleStopWorker)
 	lm.HandleFunc("/api/local/", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSONError(w, http.StatusNotFound, "not found")
 	})
@@ -382,35 +417,61 @@ func (l *localAPI) handleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp := &mycelv1.RegisterAgentResponse{}
-	err = l.n.hubRPC(ctx, bus.RPCRegisterAgent,
-		&mycelv1.RegisterAgentRequest{AgentName: body.Name, SandboxId: "", Harness: body.Harness}, resp)
+	s, err := l.registerSession(ctx, &mycelv1.RegisterAgentRequest{AgentName: body.Name, SandboxId: "", Harness: body.Harness}, false)
 	if err != nil {
-		writeRPCError(w, err)
+		writeRegisterError(w, err)
 		return
 	}
-	if resp.GetAgentId() != "agent:"+body.Name+"@"+l.n.name() || resp.GetToken() == "" {
+	l.log.Info("local agent registered", "agent", s.agentID, "harness", s.harness)
+	writeJSON(w, http.StatusCreated, registerReply{AgentID: s.agentID, Session: s.id})
+}
+
+// errShuttingDown: the local API is closing.
+var errShuttingDown = errors.New("daemon is shutting down")
+
+func writeRegisterError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, errShuttingDown):
+		writeJSONError(w, http.StatusServiceUnavailable, err.Error())
+	case errors.Is(err, errBadReply):
 		writeJSONError(w, http.StatusBadGateway, errBadReply.Error())
-		return
+	default:
+		writeRPCError(w, err)
+	}
+}
+
+// registerSession registers reg with the hub and adds a local session for
+// it with its token refresh loop. The caller holds the name's regLock.
+func (l *localAPI) registerSession(ctx context.Context, reg *mycelv1.RegisterAgentRequest, worker bool) (*agentSession, error) {
+	resp := &mycelv1.RegisterAgentResponse{}
+	if err := l.n.hubRPC(ctx, bus.RPCRegisterAgent, reg, resp); err != nil {
+		return nil, err
+	}
+	if resp.GetAgentId() != "agent:"+reg.GetAgentName()+"@"+l.n.name() || resp.GetToken() == "" {
+		return nil, errBadReply
 	}
 	sid, err := randomB64(24)
 	if err != nil {
-		writeJSONError(w, http.StatusInternalServerError, "internal error")
-		return
+		return nil, err
 	}
 	sctx, scancel := context.WithCancel(l.ctx)
 	s := &agentSession{
-		id: sid, name: body.Name, agentID: resp.GetAgentId(), harness: body.Harness,
+		id: sid, name: reg.GetAgentName(), agentID: resp.GetAgentId(), harness: reg.GetHarness(),
 		since: time.Now().UTC(), cancel: scancel, kick: make(chan struct{}, 1),
+		reg: proto.Clone(reg).(*mycelv1.RegisterAgentRequest), worker: worker,
 	}
 	s.setToken(resp.GetToken(), resp.GetExpiresAt())
+	if reason, paused := hubPausedReason(resp); paused {
+		// A re-registered agent keeps an earlier pause (D019).
+		s.setPaused(true, reason)
+		l.log.Info("hub reports the agent paused", "agent", s.agentID, "reason", resp.GetPausedReason())
+	}
 
 	l.mu.Lock()
 	if l.closed {
 		l.mu.Unlock()
 		scancel()
-		writeJSONError(w, http.StatusServiceUnavailable, "daemon is shutting down")
-		return
+		return nil, errShuttingDown
 	}
 	l.sessions[sid] = s
 	l.byName[s.name] = s
@@ -420,8 +481,7 @@ func (l *localAPI) handleRegister(w http.ResponseWriter, r *http.Request) {
 		defer l.wg.Done()
 		l.refreshLoop(sctx, s)
 	}()
-	l.log.Info("local agent registered", "agent", s.agentID, "harness", s.harness)
-	writeJSON(w, http.StatusCreated, registerReply{AgentID: s.agentID, Session: sid})
+	return s, nil
 }
 
 type agentListEntry struct {
@@ -448,6 +508,14 @@ func (l *localAPI) handleList(w http.ResponseWriter, _ *http.Request) {
 
 func (l *localAPI) handleDelete(w http.ResponseWriter, r *http.Request) {
 	s := l.session(r.PathValue("session"))
+	if s != nil && s.worker {
+		// A worker's session lives as long as its process: the worker's
+		// `mycel mcp` ending its session on exit must not orphan the
+		// process. Stopping a worker is DELETE /api/local/workers/{agent}.
+		w.Header().Set("Cache-Control", "no-store")
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
 	if s == nil || !l.endSession(s) {
 		writeJSONError(w, http.StatusNotFound, "unknown session")
 		return
@@ -475,6 +543,10 @@ func (l *localAPI) handleRPC(w http.ResponseWriter, r *http.Request) {
 	s := l.session(r.PathValue("session"))
 	if s == nil {
 		writeJSONError(w, http.StatusNotFound, "unknown session")
+		return
+	}
+	if paused, reason := s.pauseState(); paused && !pausedAllowed[am.subject] {
+		writeJSONError(w, http.StatusLocked, "agent paused: "+reason)
 		return
 	}
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxLocalBody))
@@ -619,7 +691,6 @@ func writeRPCError(w http.ResponseWriter, err error) {
 		writeJSONError(w, http.StatusServiceUnavailable, errBusDown.Error())
 	case errors.Is(err, errHubTimeout), errors.Is(err, context.DeadlineExceeded):
 		writeJSONError(w, http.StatusGatewayTimeout, errHubTimeout.Error())
-		writeJSONError(w, http.StatusGatewayTimeout, err.Error())
 	case errors.Is(err, errBadReply):
 		writeJSONError(w, http.StatusBadGateway, err.Error())
 	default:
@@ -648,6 +719,10 @@ func (l *localAPI) refreshLoop(ctx context.Context, s *agentSession) {
 		case err == nil:
 			delay = s.refreshDelay()
 		case errors.Is(err, errAgentRevoked):
+			if wk := l.workerOf(s); wk != nil {
+				// The worker's process cannot work without its agent.
+				l.stopWorker(wk, exitKilled)
+			}
 			if l.endSession(s) {
 				l.log.Warn("local agent revoked by hub; session ended", "agent", s.agentID)
 			}
@@ -718,8 +793,11 @@ func (l *localAPI) refreshOnce(ctx context.Context, s *agentSession) error {
 	rctx, cancel := context.WithTimeout(ctx, localRPCTimeout)
 	defer cancel()
 	resp := &mycelv1.RegisterAgentResponse{}
-	err := l.n.hubRPC(rctx, bus.RPCRegisterAgent,
-		&mycelv1.RegisterAgentRequest{AgentName: s.name, SandboxId: "", Harness: s.harness}, resp)
+	reg := s.reg
+	if reg == nil {
+		reg = &mycelv1.RegisterAgentRequest{AgentName: s.name, SandboxId: "", Harness: s.harness}
+	}
+	err := l.n.hubRPC(rctx, bus.RPCRegisterAgent, reg, resp)
 	if err != nil {
 		var he *hubError
 		if errors.As(err, &he) && isRevokedMsg(he.msg) {
@@ -731,6 +809,14 @@ func (l *localAPI) refreshOnce(ctx context.Context, s *agentSession) error {
 		return errBadReply
 	}
 	s.setToken(resp.GetToken(), resp.GetExpiresAt())
+	if reason, paused := hubPausedReason(resp); paused {
+		l.log.Info("hub reports the agent paused", "agent", s.agentID, "reason", resp.GetPausedReason())
+		if wk := l.workerOf(s); wk != nil {
+			l.pauseWorker(wk, reason)
+		} else {
+			s.setPaused(true, reason)
+		}
+	}
 	return nil
 }
 

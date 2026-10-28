@@ -23,12 +23,14 @@ type Status struct {
 	Caps            []string        `json:"caps"`
 	Inventory       json.RawMessage `json:"inventory"`
 	LocalAgents     int             `json:"local_agents"`
+	Workers         int             `json:"workers"` // running or paused local workers
 }
 
 func (n *node) status() Status {
-	agents := 0
+	agents, workers := 0, 0
 	if n.local != nil {
 		agents = n.local.count()
+		workers = n.local.runningWorkers()
 	}
 	n.mu.Lock()
 	defer n.mu.Unlock()
@@ -41,6 +43,7 @@ func (n *node) status() Status {
 		Caps:         append([]string{}, n.st.Caps...),
 		Inventory:    json.RawMessage("null"),
 		LocalAgents:  agents,
+		Workers:      workers,
 	}
 	if n.expired && n.state != StateRevoked {
 		s.State = StateExpired
