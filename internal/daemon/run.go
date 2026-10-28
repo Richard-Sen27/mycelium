@@ -605,8 +605,30 @@ func (n *node) probeOnce(ctx context.Context) {
 		}
 		return
 	}
-	h := inventory.Hash(inv)
 	n.mu.Lock()
+	// The probe lists what is installed; the hub must see what can run.
+	inv.SandboxBackends = n.jobs.availableBackends()
+	h := inventory.Hash(inv)
+	changed := h != n.invHash
+	n.inv, n.invHash = inv, h
+	n.mu.Unlock()
+	if changed {
+		n.wake()
+	}
+}
+
+// setInventoryBackends replaces inventory.sandbox_backends with the
+// available backends and rehashes, so the next beat carries the full
+// inventory when the set changed.
+func (n *node) setInventoryBackends(list []string) {
+	n.mu.Lock()
+	if n.inv == nil {
+		n.mu.Unlock()
+		return // the first probe picks the list up
+	}
+	inv := proto.Clone(n.inv).(*mycelv1.Inventory)
+	inv.SandboxBackends = append([]string{}, list...)
+	h := inventory.Hash(inv)
 	changed := h != n.invHash
 	n.inv, n.invHash = inv, h
 	n.mu.Unlock()

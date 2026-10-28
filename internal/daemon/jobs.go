@@ -13,6 +13,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -185,8 +186,14 @@ func (m *jobManager) refreshBackends(ctx context.Context) {
 		}
 	}
 	m.mu.Lock()
+	changed := !slices.Equal(m.backends, list) || m.backends == nil
 	m.backends = list
 	m.mu.Unlock()
+	if changed {
+		// The hub schedules on inventory.sandbox_backends: send the new set
+		// in a full beat now rather than at the next probe.
+		m.n.setInventoryBackends(list)
+	}
 }
 
 // loop refreshes backends (and retries a failed proxy) and removes old job

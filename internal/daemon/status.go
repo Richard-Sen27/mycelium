@@ -26,7 +26,8 @@ type Status struct {
 	Workers         int             `json:"workers"` // running or paused local workers
 	Jobs            int             `json:"jobs"`    // running jobs
 	// SandboxBackendsAvailable lists the registered sandbox backends that
-	// are available (refreshed every minute).
+	// are available (refreshed every minute); heartbeats report the same
+	// list as inventory.sandbox_backends.
 	SandboxBackendsAvailable []string `json:"sandbox_backends_available"`
 	// EgressProxy is the egress proxy's address, or "unavailable: <reason>".
 	EgressProxy string `json:"egress_proxy"`

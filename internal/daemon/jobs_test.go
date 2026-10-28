@@ -21,6 +21,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	mycelv1 "github.com/richard-sen27/mycelium/gen/mycel/v1"
+	"github.com/richard-sen27/mycelium/internal/bus"
 	"github.com/richard-sen27/mycelium/internal/sandbox/fake"
 	"github.com/richard-sen27/mycelium/profiles"
 )
@@ -517,4 +518,52 @@ func (f *fakeJobs) logFor(id string) (string, []uint64) {
 		return "", nil
 	}
 	return string(l.data), append([]uint64(nil), l.recv...)
+}
+
+// Heartbeats report the backends that can run, not what is installed: the
+// fake backend appears only while MYCEL_FAKE_SANDBOX_OK=1.
+func TestHeartbeatReportsAvailableBackends(t *testing.T) {
+	t.Setenv(fake.EnvOK, "")
+	h := newFakeHub(t)
+	dir := joinNode(t, h, "n1")
+	sub, err := h.hubConn().SubscribeSync(bus.NodeTelemetry("n1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := newFakeProbe()
+	installed := proto.Clone(p.inv.Load()).(*mycelv1.Inventory)
+	installed.SandboxBackends = []string{"fake", "firecracker"} // what the probe found installed
+	p.inv.Store(installed)
+	sl := &stateLog{}
+	cfg := testRunConfig(p, sl)
+	cfg.backendsRefreshEvery = 50 * time.Millisecond
+	r := startRunWith(t, dir, cfg, p, sl)
+	waitConnected(t, r.addr)
+
+	// waitBeat waits for a full-inventory beat whose backends satisfy want.
+	waitBeat := func(what string, want func([]string) bool) {
+		t.Helper()
+		deadline := time.Now().Add(10 * time.Second)
+		for time.Now().Before(deadline) {
+			hb := nextBeat(t, sub)
+			if inv := hb.GetInventory(); inv != nil && want(inv.GetSandboxBackends()) {
+				if hb.GetInventoryHash() == "" {
+					t.Fatal("beat without inventory hash")
+				}
+				return
+			}
+		}
+		t.Fatalf("no heartbeat with %s", what)
+	}
+	without := func(b []string) bool { return !containsString(b, "fake") && !containsString(b, "firecracker") }
+	waitBeat("no fake backend", without)
+
+	t.Setenv(fake.EnvOK, "1")
+	waitBeat("the fake backend", func(b []string) bool { return containsString(b, "fake") && !containsString(b, "firecracker") })
+	if s := getStatus(t, r.addr); !containsString(s.SandboxBackendsAvailable, "fake") {
+		t.Fatalf("status backends %v", s.SandboxBackendsAvailable)
+	}
+
+	t.Setenv(fake.EnvOK, "0")
+	waitBeat("the fake backend gone again", without)
 }
