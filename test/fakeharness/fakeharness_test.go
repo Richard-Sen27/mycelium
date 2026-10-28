@@ -19,6 +19,7 @@ func TestSubstitute(t *testing.T) {
 	stored := map[string]storedResult{
 		"task": {text: "posted msg_01JABCDEF seq 3 in #task-x (thread none, hop 0)", expect: "posted msg_"},
 		"name": {text: "worker"},
+		"run":  {text: "job job_01JXYZ queued (profile fake); exported a as art_01JQ name a"},
 		"wait": {
 			text: "[mycel message msg_AAA in #x from agent:a@n (untrusted) hop 0]\n> first\n[end mycel message]\n\n" +
 				"[mycel message msg_BBB in #x from agent:b@n (untrusted) hop 1]\n> second msg_ZZZ\n[end mycel message]",
@@ -35,6 +36,8 @@ func TestSubstitute(t *testing.T) {
 		"first":    "{{wait|msgid:> first}}",
 		"header":   "{{wait|msgid:from agent:b@n}}",
 		"nomatch":  "{{wait|msgid:absent}}",
+		"job":      "{{run|id:job_}}",
+		"art":      "{{run|id:art_}}",
 	}, stored)
 	if err != nil {
 		t.Fatal(err)
@@ -49,12 +52,14 @@ func TestSubstitute(t *testing.T) {
 		"first":    "msg_AAA",
 		"header":   "msg_BBB",
 		"nomatch":  "msg_AAA",
+		"job":      "job_01JXYZ",
+		"art":      "art_01JQ",
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %#v\nwant %#v", got, want)
 	}
 
-	for _, bad := range []string{"{{missing}}", "{{name|msgid}}", "{{name|upper}}"} {
+	for _, bad := range []string{"{{missing}}", "{{name|msgid}}", "{{name|upper}}", "{{name|id:job_}}", "{{run|id:}}"} {
 		if _, err := substitute(map[string]any{"a": bad}, stored); err == nil {
 			t.Errorf("%s: want an error", bad)
 		}

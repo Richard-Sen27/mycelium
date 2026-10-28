@@ -347,6 +347,10 @@ type Hub struct {
 	BusPort       int
 	LocalAddr     string // host:port of the hub daemon's local API (bound to port 0)
 	Proc          *proc
+	// DaemonArgs and DaemonEnv are added to every start of the hub daemon
+	// (hubOptions), e.g. --allow-fake-profile and MYCEL_FAKE_SANDBOX_OK=1.
+	DaemonArgs []string
+	DaemonEnv  []string
 }
 
 type hubInitOut struct {
@@ -374,8 +378,28 @@ const startHubAttempts = 3
 
 func startHub(t *testing.T) *Hub {
 	t.Helper()
+	return startHubWith(t, hubOptions{})
+}
+
+// hubOptions changes how startHubWith sets up the hub.
+type hubOptions struct {
+	Args []string // extra daemon arguments
+	Env  []string // extra daemon environment
+	// Root returns a fresh root directory for the hub (and its nodes);
+	// nil means t.TempDir().
+	Root func(t *testing.T) string
+}
+
+// startHubWith is startHub with extra daemon arguments, environment or root.
+func startHubWith(t *testing.T, o hubOptions) *Hub {
+	t.Helper()
 	for attempt := 1; ; attempt++ {
-		h := initHub(t)
+		root := ""
+		if o.Root != nil {
+			root = o.Root(t)
+		}
+		h := initHubAt(t, root)
+		h.DaemonArgs, h.DaemonEnv = o.Args, o.Env
 		err := h.start()
 		if err == nil {
 			return h
@@ -387,10 +411,13 @@ func startHub(t *testing.T) *Hub {
 	}
 }
 
-// initHub runs `hub init` in a fresh root with fresh ports.
-func initHub(t *testing.T) *Hub {
+// initHubAt runs `hub init` in root ("" for a fresh t.TempDir()) with fresh
+// ports.
+func initHubAt(t *testing.T, root string) *Hub {
 	t.Helper()
-	root := t.TempDir()
+	if root == "" {
+		root = t.TempDir()
+	}
 	ports := freePorts(t, 2)
 	h := &Hub{
 		t:       t,
@@ -434,8 +461,8 @@ func (h *Hub) Start() {
 
 func (h *Hub) start() error {
 	offset := fileSize(filepath.Join(h.Root, "hub.stdout.log"))
-	h.Proc = startProc(h.t, "hub", h.Root, childEnv("MYCEL_HOME="+h.Home),
-		"daemon", "--json", "--local-addr", "127.0.0.1:0")
+	args := append([]string{"daemon", "--json", "--local-addr", "127.0.0.1:0"}, h.DaemonArgs...)
+	h.Proc = startProc(h.t, "hub", h.Root, append(childEnv("MYCEL_HOME="+h.Home), h.DaemonEnv...), args...)
 	var ready daemonReady
 	if err := h.Proc.waitReadyErr(offset, &ready); err != nil {
 		return err

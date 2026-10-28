@@ -27,6 +27,12 @@ const EnvLocalAddr = "MYCEL_LOCAL_ADDR"
 // that a node daemon started.
 const EnvTranscriptDir = "MYCEL_FAKE_TRANSCRIPT_DIR"
 
+// EnvWorkdir names the environment variable (in the env passed to Run)
+// naming the working directory of `mycel mcp`, the directory that
+// export_artifact and fetch_artifact resolve paths against. Unset, the child
+// inherits the test's working directory.
+const EnvWorkdir = "MYCEL_FAKE_WORKDIR"
+
 // RaceDetected is what the race detector prints on stderr.
 const RaceDetected = "WARNING: DATA RACE"
 
@@ -141,6 +147,7 @@ func RunObserved(ctx context.Context, bin string, env []string, agent, harness s
 	}
 	cmd := exec.Command(bin, args...) //nolint:gosec // the binary under test
 	cmd.Env = ChildEnv(env...)
+	cmd.Dir = lookupEnv(env, EnvWorkdir)
 	stderr := &syncBuffer{}
 	cmd.Stderr = stderr
 
@@ -299,7 +306,7 @@ func call(ctx context.Context, cs *mcp.ClientSession, index, step int, tool stri
 }
 
 var (
-	// {{name}}, {{name|msgid}} or {{name|msgid:<substring>}}.
+	// {{name}}, {{name|msgid}}, {{name|msgid:<substring>}} or {{name|id:<prefix>}}.
 	placeholderRe = regexp.MustCompile(`\{\{\s*([A-Za-z0-9_.-]+)\s*(?:\|\s*([a-z]+)(?::([^}]*))?\s*)?\}\}`)
 	msgIDRe       = regexp.MustCompile(`msg_[A-Za-z0-9]+`)
 	// headerIDRe finds the id in a quoted message header.
@@ -385,6 +392,12 @@ func substString(s string, stored map[string]storedResult) (string, error) {
 				fail(fmt.Errorf("no msg_ id in stored result %q: %q", sub[1], val.text))
 			}
 			return id
+		case "id":
+			id := prefixedID(val.text, sub[3])
+			if id == "" {
+				fail(fmt.Errorf("no %s id in stored result %q: %q", sub[3], sub[1], val.text))
+			}
+			return id
 		default:
 			fail(fmt.Errorf("unknown filter %q", sub[2]))
 			return m
@@ -414,6 +427,17 @@ func msgID(text, near string) string {
 		}
 	}
 	return msgIDRe.FindString(text)
+}
+
+// prefixedID returns the first word in text that starts with prefix (e.g.
+// "job_" or "art_") followed by letters and digits, or "".
+func prefixedID(text, prefix string) string {
+	prefix = strings.TrimSpace(prefix)
+	if prefix == "" {
+		return ""
+	}
+	re := regexp.MustCompile(regexp.QuoteMeta(prefix) + `[A-Za-z0-9]+`)
+	return re.FindString(text)
 }
 
 func lookupEnv(env []string, key string) string {

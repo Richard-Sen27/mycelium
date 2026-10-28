@@ -6,7 +6,8 @@
 //
 //	type Step struct {
 //	    Tool        string         // MCP tool name; "" with SleepMS only pauses
-//	    Args        map[string]any // arguments; {{name}}, {{name|msgid}}, {{name|msgid:<substring>}}
+//	    Args        map[string]any // arguments; {{name}}, {{name|msgid}}, {{name|msgid:<substring>}},
+//	                               // {{name|id:<prefix>}}
 //	    Expect      string         // substring the result must contain ("" = any)
 //	    ExpectAll   []string       // each must appear in some result of the step
 //	    ExpectError bool           // the step must end in a tool error containing Expect
@@ -26,9 +27,14 @@
 // the first occurrence of the storing step's Expect (or of <substring> with
 // the msgid:<substring> form), else the first msg_ id in the text.
 //
+// {{name|id:<prefix>}} takes the first word of the stored result that starts
+// with <prefix> followed by letters and digits, e.g. {{run|id:job_}} or
+// {{exp|id:art_}}.
+//
 // The child environment is ChildEnv(env...): the parent's without MYCEL_*
 // variables, GORACE with halt_on_error=1, then env. MYCEL_LOCAL_ADDR in env
-// becomes --local-addr; MYCEL_FAKE_TRANSCRIPT_DIR in env makes every run
+// becomes --local-addr; MYCEL_FAKE_WORKDIR in env is the child's working
+// directory; MYCEL_FAKE_TRANSCRIPT_DIR in env makes every run
 // write its transcript to <dir>/<agent>.txt, which is how tests read the
 // transcripts of workers that a node daemon started with `mycel
 // fakeharness`.
