@@ -18,14 +18,10 @@
 // The binary path recorded in the unit is the running executable's path;
 // `install` refuses a path inside a temporary directory. `status` reports
 // installed, running and the pid; `logs` tails the log file with rotation
-// at 10 MiB x 3 handled by the daemon. Every command works without
+// at 10 MiB x 3 handled by the daemon (`mycel daemon --log-file`, see
+// RotatingWriter). Every command works without
 // elevation; nothing touches system-wide locations.
 package service
-
-import "errors"
-
-// ErrNotImplemented marks contract stubs.
-var ErrNotImplemented = errors.New("service: not implemented")
 
 // Status is what `mycel service status` reports.
 type Status struct {
@@ -43,6 +39,3 @@ type Manager interface {
 	Stop() error
 	Status() (Status, error)
 }
-
-// New returns the platform manager for the given MYCEL_HOME.
-func New(home string) (Manager, error) { panic(ErrNotImplemented) }

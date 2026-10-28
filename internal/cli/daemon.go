@@ -45,11 +45,19 @@ type roleResult struct {
 func (a *app) daemonCmd() *cobra.Command {
 	var apiListen, busListen, localAddr string
 	var allowFakeProfile bool
+	var logFile string
 	cmd := &cobra.Command{
 		Use:   "daemon",
 		Short: "Run every role initialised on this machine (hub and/or node)",
 		Args:  noArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if logFile != "" {
+				closer, err := a.useLogFile(logFile)
+				if err != nil {
+					return err
+				}
+				defer func() { _ = closer.Close() }()
+			}
 			dirs, err := config.Resolve()
 			if err != nil {
 				return err
@@ -186,6 +194,7 @@ func (a *app) daemonCmd() *cobra.Command {
 	f.StringVar(&localAddr, "local-addr", defaultLocalAddr, "node local UI and status address (default "+hubMachineLocalAddr+" when the hub role also runs)")
 	f.BoolVar(&allowFakeProfile, "allow-fake-profile", false, "load the CI-only \"fake\" sandbox profile (no isolation; tests only)")
 	_ = f.MarkHidden("allow-fake-profile")
+	f.StringVar(&logFile, "log-file", "", "write the log to this file, rotated at 10 MiB x 3 (the background service sets it)")
 	return cmd
 }
 

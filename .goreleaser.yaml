@@ -1,0 +1,56 @@
+# Release build (docs/decisions.md D026): `goreleaser release` from a v* tag in
+# .github/workflows/release.yml; `goreleaser build --snapshot --clean
+# --single-target` in CI keeps this file valid. The archives and
+# checksums.txt are what scripts/install.sh and scripts/install.ps1 download.
+version: 2
+
+project_name: mycel
+
+before:
+  hooks:
+    # The web UI is embedded in the binary (internal/web/dist).
+    - make web
+
+builds:
+  - id: mycel
+    main: ./cmd/mycel
+    binary: mycel
+    env:
+      - CGO_ENABLED=0
+    goos: [darwin, linux, windows]
+    goarch: [amd64, arm64]
+    ignore:
+      - goos: windows
+        goarch: arm64
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X github.com/richard-sen27/mycelium/internal/version.Version={{ .Tag }}
+
+archives:
+  - id: mycel
+    ids: [mycel]
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    # mycel_1.2.3_darwin_arm64.tar.gz, mycel_1.2.3_windows_amd64.zip
+    name_template: "mycel_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - README.md
+      - LICENSE
+      - docs/quickstart.md
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-snapshot"
+
+changelog:
+  use: git
+  sort: asc
+
+release:
+  prerelease: auto

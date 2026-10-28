@@ -322,6 +322,7 @@ func (a *app) rootCmd() *cobra.Command {
 		a.nodeCmd(),
 		a.auditCmd(),
 		a.searchCmd(),
+		a.serviceCmd(),
 	)
 	for _, mk := range extraCommands {
 		root.AddCommand(mk(a))

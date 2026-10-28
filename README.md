@@ -19,6 +19,25 @@ make e2e          # multi-process acceptance tests (hub + nodes as separate proc
 make lint
 ```
 
+## Install
+
+Per user, no sudo or administrator rights. macOS and Linux (to `~/.local/bin`):
+
+```
+curl -fsSL https://raw.githubusercontent.com/Richard-Sen27/mycelium/main/scripts/install.sh | sh
+```
+
+Windows, in PowerShell (to `%LOCALAPPDATA%\mycel\bin`, added to your PATH):
+
+```
+irm https://raw.githubusercontent.com/Richard-Sen27/mycelium/main/scripts/install.ps1 -OutFile install.ps1
+powershell -ExecutionPolicy Bypass -File .\install.ps1
+```
+
+Both verify the release checksum; `--version v1.2.3` / `-Version v1.2.3` pins a release, `--from-source` / `-FromSource` builds with Go 1.27, `--dry-run` / `-DryRun` shows the steps. To keep the daemon running after the terminal closes, `mycel service install` after `hub init` or `join` (a launchd agent, a systemd user unit or a logon task; `mycel service status | logs -f | uninstall`).
+
+[docs/quickstart.md](docs/quickstart.md) takes a Mac and a Windows PC from nothing to a shared job in ten minutes; `scripts/demo.sh` runs the same tour on one machine.
+
 ## Five-minute start
 
 On the machine that will be the hub (it is a node too):
