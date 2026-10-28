@@ -28,7 +28,7 @@ message JoinToken {
 
 message EnrolRequest {
   string token = 1; // the full "mcl1_..." string
-  bytes csr_der = 2; // PKCS#10 CSR, DER; subject CN must equal the token's node name
+  bytes csr_der = 2; // PKCS#10 CSR, DER; the hub uses only its public key (subject is ignored)
 }
 
 message EnrolResponse {

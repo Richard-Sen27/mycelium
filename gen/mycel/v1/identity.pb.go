@@ -196,7 +196,7 @@ func (x *JoinToken) GetRevokedAt() string {
 type EnrolRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Token         string                 `protobuf:"bytes,1,opt,name=token,proto3" json:"token,omitempty"`                 // the full "mcl1_..." string
-	CsrDer        []byte                 `protobuf:"bytes,2,opt,name=csr_der,json=csrDer,proto3" json:"csr_der,omitempty"` // PKCS#10 CSR, DER; subject CN must equal the token's node name
+	CsrDer        []byte                 `protobuf:"bytes,2,opt,name=csr_der,json=csrDer,proto3" json:"csr_der,omitempty"` // PKCS#10 CSR, DER; the hub uses only its public key (subject is ignored)
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
