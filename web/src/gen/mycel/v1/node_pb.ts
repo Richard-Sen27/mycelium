@@ -18,7 +18,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file mycel/v1/node.proto.
  */
 export const file_mycel_v1_node: GenFile = /*@__PURE__*/
-  fileDesc("ChNteWNlbC92MS9ub2RlLnByb3RvEghteWNlbC52MSJXCgNHcHUSDQoFaW5kZXgYASABKAUSDgoGdmVuZG9yGAIgASgJEg0KBW1vZGVsGAMgASgJEhIKCnZyYW1fYnl0ZXMYBCABKAQSDgoGZHJpdmVyGAUgASgJIj4KDFRvb2xQcmVzZW5jZRIPCgdwcmVzZW50GAEgASgIEg8KB3ZlcnNpb24YAiABKAkSDAoEcGF0aBgDIAEoCSK1AgoJSW52ZW50b3J5EgoKAm9zGAEgASgJEgwKBGFyY2gYAiABKAkSEAoIaG9zdG5hbWUYAyABKAkSEgoKb3NfdmVyc2lvbhgEIAEoCRIRCgljcHVfY291bnQYBSABKAUSEQoJY3B1X21vZGVsGAYgASgJEhEKCW1lbV9ieXRlcxgHIAEoBBIbCgRncHVzGAggAygLMg0ubXljZWwudjEuR3B1EiYKBmRvY2tlchgJIAEoCzIWLm15Y2VsLnYxLlRvb2xQcmVzZW5jZRImCgZvbGxhbWEYCiABKAsyFi5teWNlbC52MS5Ub29sUHJlc2VuY2USGAoQc2FuZGJveF9iYWNrZW5kcxgLIAMoCRIVCg1teWNlbF92ZXJzaW9uGAwgASgJEhEKCXByb2JlZF9hdBgNIAEoCSKwAgoETm9kZRIKCgJpZBgBIAEoCRIMCgRuYW1lGAIgASgJEhEKCXNwaWZmZV9pZBgDIAEoCRIQCghvd25lcl9pZBgEIAEoCRIsCgxjYXBzX2NlaWxpbmcYBSABKAsyFi5teWNlbC52MS5DYXBhYmlsaXRpZXMSLAoMY2Fwc19lbmFibGVkGAYgASgLMhYubXljZWwudjEuQ2FwYWJpbGl0aWVzEiYKCWludmVudG9yeRgHIAEoCzITLm15Y2VsLnYxLkludmVudG9yeRIOCgZvbmxpbmUYCCABKAgSFAoMbGFzdF9zZWVuX2F0GAkgASgJEhMKC2NlcnRfc2VyaWFsGAogASgJEhYKDmNlcnRfbm90X2FmdGVyGAsgASgJEhIKCmNyZWF0ZWRfYXQYDCABKAkihwEKCUhlYXJ0YmVhdBIRCglub2RlX25hbWUYASABKAkSJgoJaW52ZW50b3J5GAIgASgLMhMubXljZWwudjEuSW52ZW50b3J5EhYKDmludmVudG9yeV9oYXNoGAMgASgJEhYKDnVwdGltZV9zZWNvbmRzGAQgASgEEg8KB3NlbnRfYXQYBSABKAkihwQKCkN0bFJlcXVlc3QSHgoEcGluZxgBIAEoCzIOLm15Y2VsLnYxLlBpbmdIABIkCgdyZXZva2VkGAIgASgLMhEubXljZWwudjEuUmV2b2tlZEgAEiUKCHNldF9jYXBzGAMgASgLMhEubXljZWwudjEuU2V0Q2Fwc0gAEiYKCHNodXRkb3duGAQgASgLMhIubXljZWwudjEuU2h1dGRvd25IABIjCgVhZ2VudBgFIAEoCzISLm15Y2VsLnYxLkFnZW50Q3RsSAASMQoOY3JlYXRlX3NhbmRib3gYBiABKAsyFy5teWNlbC52MS5DcmVhdGVTYW5kYm94SAASLQoMa2lsbF9zYW5kYm94GAcgASgLMhUubXljZWwudjEuS2lsbFNhbmRib3hIABItCgxhdHRhY2hfZ3JhbnQYCCABKAsyFS5teWNlbC52MS5BdHRhY2hHcmFudEgAEi0KDGRldGFjaF9ncmFudBgJIAEoCzIVLm15Y2VsLnYxLkRldGFjaEdyYW50SAASIgoGZnJlZXplGAogASgLMhAubXljZWwudjEuRnJlZXplSAASJgoIdW5mcmVlemUYCyABKAsyEi5teWNlbC52MS5VbmZyZWV6ZUgAEiwKB3NoYXJpbmcYDCABKAsyGS5teWNlbC52MS5TaGFyaW5nU2V0dGluZ3NIAEIFCgNjbWQiPAoIQWdlbnRDdGwSEAoIYWdlbnRfaWQYASABKAkSDgoGYWN0aW9uGAIgASgJEg4KBnJlYXNvbhgDIAEoCSIGCgRQaW5nIhkKB1Jldm9rZWQSDgoGcmVhc29uGAEgASgJIjcKB1NldENhcHMSLAoMY2Fwc19lbmFibGVkGAEgASgLMhYubXljZWwudjEuQ2FwYWJpbGl0aWVzIhoKCFNodXRkb3duEg4KBnJlYXNvbhgBIAEoCSIoCgtDdGxSZXNwb25zZRIKCgJvaxgBIAEoCBINCgVlcnJvchgCIAEoCSKoAQoUUmVnaXN0ZXJBZ2VudFJlcXVlc3QSEgoKYWdlbnRfbmFtZRgBIAEoCRISCgpzYW5kYm94X2lkGAIgASgJEg8KB2hhcm5lc3MYAyABKAkSDgoGcGFyZW50GAQgASgJEhQKDGhvbWVfY2hhbm5lbBgFIAEoCRIgCgZidWRnZXQYBiABKAsyEC5teWNlbC52MS5CdWRnZXQSDwoHd29ya2RpchgHIAEoCSJRChFBZ2VudFVzYWdlUmVxdWVzdBIQCghhZ2VudF9pZBgBIAEoCRIOCgZ0b2tlbnMYAiABKAMSCwoDdXNkGAMgASgBEg0KBXR1cm5zGAQgASgFInwKEkFnZW50VXNhZ2VSZXNwb25zZRIpCg9hZ2VudF9yZW1haW5pbmcYASABKAsyEC5teWNlbC52MS5CdWRnZXQSKwoRY2hhbm5lbF9yZW1haW5pbmcYAiABKAsyEC5teWNlbC52MS5CdWRnZXQSDgoGcGF1c2VkGAMgASgIIkkKEkFnZW50RXhpdGVkUmVxdWVzdBIQCghhZ2VudF9pZBgBIAEoCRIRCglleGl0X2NvZGUYAiABKAUSDgoGcmVhc29uGAMgASgJIhUKE0FnZW50RXhpdGVkUmVzcG9uc2UijgEKFVJlZ2lzdGVyQWdlbnRSZXNwb25zZRIQCghhZ2VudF9pZBgBIAEoCRINCgV0b2tlbhgCIAEoCRISCgpleHBpcmVzX2F0GAMgASgJEg0KBXN0YXRlGAQgASgJEhUKDXBhdXNlZF9yZWFzb24YBSABKAkSGgoSZmlyc3RfcmVnaXN0cmF0aW9uGAYgASgIIjsKGFJlZnJlc2hBZ2VudFRva2VuUmVxdWVzdBIQCghhZ2VudF9pZBgBIAEoCRINCgV0b2tlbhgCIAEoCSI+ChlSZWZyZXNoQWdlbnRUb2tlblJlc3BvbnNlEg0KBXRva2VuGAEgASgJEhIKCmV4cGlyZXNfYXQYAiABKAliBnByb3RvMw", [file_mycel_v1_common, file_mycel_v1_envelope, file_mycel_v1_grant, file_mycel_v1_job]);
+  fileDesc("ChNteWNlbC92MS9ub2RlLnByb3RvEghteWNlbC52MSJXCgNHcHUSDQoFaW5kZXgYASABKAUSDgoGdmVuZG9yGAIgASgJEg0KBW1vZGVsGAMgASgJEhIKCnZyYW1fYnl0ZXMYBCABKAQSDgoGZHJpdmVyGAUgASgJIj4KDFRvb2xQcmVzZW5jZRIPCgdwcmVzZW50GAEgASgIEg8KB3ZlcnNpb24YAiABKAkSDAoEcGF0aBgDIAEoCSK1AgoJSW52ZW50b3J5EgoKAm9zGAEgASgJEgwKBGFyY2gYAiABKAkSEAoIaG9zdG5hbWUYAyABKAkSEgoKb3NfdmVyc2lvbhgEIAEoCRIRCgljcHVfY291bnQYBSABKAUSEQoJY3B1X21vZGVsGAYgASgJEhEKCW1lbV9ieXRlcxgHIAEoBBIbCgRncHVzGAggAygLMg0ubXljZWwudjEuR3B1EiYKBmRvY2tlchgJIAEoCzIWLm15Y2VsLnYxLlRvb2xQcmVzZW5jZRImCgZvbGxhbWEYCiABKAsyFi5teWNlbC52MS5Ub29sUHJlc2VuY2USGAoQc2FuZGJveF9iYWNrZW5kcxgLIAMoCRIVCg1teWNlbF92ZXJzaW9uGAwgASgJEhEKCXByb2JlZF9hdBgNIAEoCSKwAgoETm9kZRIKCgJpZBgBIAEoCRIMCgRuYW1lGAIgASgJEhEKCXNwaWZmZV9pZBgDIAEoCRIQCghvd25lcl9pZBgEIAEoCRIsCgxjYXBzX2NlaWxpbmcYBSABKAsyFi5teWNlbC52MS5DYXBhYmlsaXRpZXMSLAoMY2Fwc19lbmFibGVkGAYgASgLMhYubXljZWwudjEuQ2FwYWJpbGl0aWVzEiYKCWludmVudG9yeRgHIAEoCzITLm15Y2VsLnYxLkludmVudG9yeRIOCgZvbmxpbmUYCCABKAgSFAoMbGFzdF9zZWVuX2F0GAkgASgJEhMKC2NlcnRfc2VyaWFsGAogASgJEhYKDmNlcnRfbm90X2FmdGVyGAsgASgJEhIKCmNyZWF0ZWRfYXQYDCABKAkihwEKCUhlYXJ0YmVhdBIRCglub2RlX25hbWUYASABKAkSJgoJaW52ZW50b3J5GAIgASgLMhMubXljZWwudjEuSW52ZW50b3J5EhYKDmludmVudG9yeV9oYXNoGAMgASgJEhYKDnVwdGltZV9zZWNvbmRzGAQgASgEEg8KB3NlbnRfYXQYBSABKAkirwQKCkN0bFJlcXVlc3QSHgoEcGluZxgBIAEoCzIOLm15Y2VsLnYxLlBpbmdIABIkCgdyZXZva2VkGAIgASgLMhEubXljZWwudjEuUmV2b2tlZEgAEiUKCHNldF9jYXBzGAMgASgLMhEubXljZWwudjEuU2V0Q2Fwc0gAEiYKCHNodXRkb3duGAQgASgLMhIubXljZWwudjEuU2h1dGRvd25IABIjCgVhZ2VudBgFIAEoCzISLm15Y2VsLnYxLkFnZW50Q3RsSAASMQoOY3JlYXRlX3NhbmRib3gYBiABKAsyFy5teWNlbC52MS5DcmVhdGVTYW5kYm94SAASLQoMa2lsbF9zYW5kYm94GAcgASgLMhUubXljZWwudjEuS2lsbFNhbmRib3hIABItCgxhdHRhY2hfZ3JhbnQYCCABKAsyFS5teWNlbC52MS5BdHRhY2hHcmFudEgAEi0KDGRldGFjaF9ncmFudBgJIAEoCzIVLm15Y2VsLnYxLkRldGFjaEdyYW50SAASIgoGZnJlZXplGAogASgLMhAubXljZWwudjEuRnJlZXplSAASJgoIdW5mcmVlemUYCyABKAsyEi5teWNlbC52MS5VbmZyZWV6ZUgAEiwKB3NoYXJpbmcYDCABKAsyGS5teWNlbC52MS5TaGFyaW5nU2V0dGluZ3NIABImCghyZWRpcmVjdBgNIAEoCzISLm15Y2VsLnYxLlJlZGlyZWN0SABCBQoDY21kImgKCFJlZGlyZWN0EhQKDHRydXN0X2RvbWFpbhgBIAEoCRIPCgdodWJfdXJsGAIgASgJEg8KB2J1c191cmwYAyABKAkSEQoJaXNzdWVkX2F0GAQgASgDEhEKCXNpZ25hdHVyZRgFIAEoDCI8CghBZ2VudEN0bBIQCghhZ2VudF9pZBgBIAEoCRIOCgZhY3Rpb24YAiABKAkSDgoGcmVhc29uGAMgASgJIgYKBFBpbmciGQoHUmV2b2tlZBIOCgZyZWFzb24YASABKAkiNwoHU2V0Q2FwcxIsCgxjYXBzX2VuYWJsZWQYASABKAsyFi5teWNlbC52MS5DYXBhYmlsaXRpZXMiGgoIU2h1dGRvd24SDgoGcmVhc29uGAEgASgJIigKC0N0bFJlc3BvbnNlEgoKAm9rGAEgASgIEg0KBWVycm9yGAIgASgJIqgBChRSZWdpc3RlckFnZW50UmVxdWVzdBISCgphZ2VudF9uYW1lGAEgASgJEhIKCnNhbmRib3hfaWQYAiABKAkSDwoHaGFybmVzcxgDIAEoCRIOCgZwYXJlbnQYBCABKAkSFAoMaG9tZV9jaGFubmVsGAUgASgJEiAKBmJ1ZGdldBgGIAEoCzIQLm15Y2VsLnYxLkJ1ZGdldBIPCgd3b3JrZGlyGAcgASgJIlEKEUFnZW50VXNhZ2VSZXF1ZXN0EhAKCGFnZW50X2lkGAEgASgJEg4KBnRva2VucxgCIAEoAxILCgN1c2QYAyABKAESDQoFdHVybnMYBCABKAUifAoSQWdlbnRVc2FnZVJlc3BvbnNlEikKD2FnZW50X3JlbWFpbmluZxgBIAEoCzIQLm15Y2VsLnYxLkJ1ZGdldBIrChFjaGFubmVsX3JlbWFpbmluZxgCIAEoCzIQLm15Y2VsLnYxLkJ1ZGdldBIOCgZwYXVzZWQYAyABKAgiSQoSQWdlbnRFeGl0ZWRSZXF1ZXN0EhAKCGFnZW50X2lkGAEgASgJEhEKCWV4aXRfY29kZRgCIAEoBRIOCgZyZWFzb24YAyABKAkiFQoTQWdlbnRFeGl0ZWRSZXNwb25zZSKOAQoVUmVnaXN0ZXJBZ2VudFJlc3BvbnNlEhAKCGFnZW50X2lkGAEgASgJEg0KBXRva2VuGAIgASgJEhIKCmV4cGlyZXNfYXQYAyABKAkSDQoFc3RhdGUYBCABKAkSFQoNcGF1c2VkX3JlYXNvbhgFIAEoCRIaChJmaXJzdF9yZWdpc3RyYXRpb24YBiABKAgiOwoYUmVmcmVzaEFnZW50VG9rZW5SZXF1ZXN0EhAKCGFnZW50X2lkGAEgASgJEg0KBXRva2VuGAIgASgJIj4KGVJlZnJlc2hBZ2VudFRva2VuUmVzcG9uc2USDQoFdG9rZW4YASABKAkSEgoKZXhwaXJlc19hdBgCIAEoCWIGcHJvdG8z", [file_mycel_v1_common, file_mycel_v1_envelope, file_mycel_v1_grant, file_mycel_v1_job]);
 
 /**
  * @generated from message mycel.v1.Gpu
@@ -391,6 +391,14 @@ export type CtlRequest = Message<"mycel.v1.CtlRequest"> & {
      */
     value: SharingSettings;
     case: "sharing";
+  } | {
+    /**
+     * phase 7: the hub moved; follow after verifying the signature
+     *
+     * @generated from field: mycel.v1.Redirect redirect = 13;
+     */
+    value: Redirect;
+    case: "redirect";
   } | { case: undefined; value?: undefined };
 };
 
@@ -400,6 +408,55 @@ export type CtlRequest = Message<"mycel.v1.CtlRequest"> & {
  */
 export const CtlRequestSchema: GenMessage<CtlRequest> = /*@__PURE__*/
   messageDesc(file_mycel_v1_node, 5);
+
+/**
+ * Redirect tells a node (or a CLI, in the Mycel-Redirect response header)
+ * that the hub now lives elsewhere. signature is the CA key's signature
+ * over identity.RedirectPayload (see internal/hub/moving.go); receivers
+ * verify it against the CA they pinned at join and ignore redirects older
+ * than one they already followed.
+ *
+ * @generated from message mycel.v1.Redirect
+ */
+export type Redirect = Message<"mycel.v1.Redirect"> & {
+  /**
+   * @generated from field: string trust_domain = 1;
+   */
+  trustDomain: string;
+
+  /**
+   * https://host:port
+   *
+   * @generated from field: string hub_url = 2;
+   */
+  hubUrl: string;
+
+  /**
+   * host:port
+   *
+   * @generated from field: string bus_url = 3;
+   */
+  busUrl: string;
+
+  /**
+   * unix seconds
+   *
+   * @generated from field: int64 issued_at = 4;
+   */
+  issuedAt: bigint;
+
+  /**
+   * @generated from field: bytes signature = 5;
+   */
+  signature: Uint8Array;
+};
+
+/**
+ * Describes the message mycel.v1.Redirect.
+ * Use `create(RedirectSchema)` to create a new message.
+ */
+export const RedirectSchema: GenMessage<Redirect> = /*@__PURE__*/
+  messageDesc(file_mycel_v1_node, 6);
 
 /**
  * AgentCtl is sent by the hub when an agent is paused (budget exhausted,
@@ -432,7 +489,7 @@ export type AgentCtl = Message<"mycel.v1.AgentCtl"> & {
  * Use `create(AgentCtlSchema)` to create a new message.
  */
 export const AgentCtlSchema: GenMessage<AgentCtl> = /*@__PURE__*/
-  messageDesc(file_mycel_v1_node, 6);
+  messageDesc(file_mycel_v1_node, 7);
 
 /**
  * @generated from message mycel.v1.Ping
@@ -445,7 +502,7 @@ export type Ping = Message<"mycel.v1.Ping"> & {
  * Use `create(PingSchema)` to create a new message.
  */
 export const PingSchema: GenMessage<Ping> = /*@__PURE__*/
-  messageDesc(file_mycel_v1_node, 7);
+  messageDesc(file_mycel_v1_node, 8);
 
 /**
  * @generated from message mycel.v1.Revoked
@@ -462,7 +519,7 @@ export type Revoked = Message<"mycel.v1.Revoked"> & {
  * Use `create(RevokedSchema)` to create a new message.
  */
 export const RevokedSchema: GenMessage<Revoked> = /*@__PURE__*/
-  messageDesc(file_mycel_v1_node, 8);
+  messageDesc(file_mycel_v1_node, 9);
 
 /**
  * @generated from message mycel.v1.SetCaps
@@ -479,7 +536,7 @@ export type SetCaps = Message<"mycel.v1.SetCaps"> & {
  * Use `create(SetCapsSchema)` to create a new message.
  */
 export const SetCapsSchema: GenMessage<SetCaps> = /*@__PURE__*/
-  messageDesc(file_mycel_v1_node, 9);
+  messageDesc(file_mycel_v1_node, 10);
 
 /**
  * @generated from message mycel.v1.Shutdown
@@ -496,7 +553,7 @@ export type Shutdown = Message<"mycel.v1.Shutdown"> & {
  * Use `create(ShutdownSchema)` to create a new message.
  */
 export const ShutdownSchema: GenMessage<Shutdown> = /*@__PURE__*/
-  messageDesc(file_mycel_v1_node, 10);
+  messageDesc(file_mycel_v1_node, 11);
 
 /**
  * @generated from message mycel.v1.CtlResponse
@@ -518,7 +575,7 @@ export type CtlResponse = Message<"mycel.v1.CtlResponse"> & {
  * Use `create(CtlResponseSchema)` to create a new message.
  */
 export const CtlResponseSchema: GenMessage<CtlResponse> = /*@__PURE__*/
-  messageDesc(file_mycel_v1_node, 11);
+  messageDesc(file_mycel_v1_node, 12);
 
 /**
  * @generated from message mycel.v1.RegisterAgentRequest
@@ -577,7 +634,7 @@ export type RegisterAgentRequest = Message<"mycel.v1.RegisterAgentRequest"> & {
  * Use `create(RegisterAgentRequestSchema)` to create a new message.
  */
 export const RegisterAgentRequestSchema: GenMessage<RegisterAgentRequest> = /*@__PURE__*/
-  messageDesc(file_mycel_v1_node, 12);
+  messageDesc(file_mycel_v1_node, 13);
 
 /**
  * @generated from message mycel.v1.AgentUsageRequest
@@ -615,7 +672,7 @@ export type AgentUsageRequest = Message<"mycel.v1.AgentUsageRequest"> & {
  * Use `create(AgentUsageRequestSchema)` to create a new message.
  */
 export const AgentUsageRequestSchema: GenMessage<AgentUsageRequest> = /*@__PURE__*/
-  messageDesc(file_mycel_v1_node, 13);
+  messageDesc(file_mycel_v1_node, 14);
 
 /**
  * @generated from message mycel.v1.AgentUsageResponse
@@ -646,7 +703,7 @@ export type AgentUsageResponse = Message<"mycel.v1.AgentUsageResponse"> & {
  * Use `create(AgentUsageResponseSchema)` to create a new message.
  */
 export const AgentUsageResponseSchema: GenMessage<AgentUsageResponse> = /*@__PURE__*/
-  messageDesc(file_mycel_v1_node, 14);
+  messageDesc(file_mycel_v1_node, 15);
 
 /**
  * @generated from message mycel.v1.AgentExitedRequest
@@ -675,7 +732,7 @@ export type AgentExitedRequest = Message<"mycel.v1.AgentExitedRequest"> & {
  * Use `create(AgentExitedRequestSchema)` to create a new message.
  */
 export const AgentExitedRequestSchema: GenMessage<AgentExitedRequest> = /*@__PURE__*/
-  messageDesc(file_mycel_v1_node, 15);
+  messageDesc(file_mycel_v1_node, 16);
 
 /**
  * @generated from message mycel.v1.AgentExitedResponse
@@ -688,7 +745,7 @@ export type AgentExitedResponse = Message<"mycel.v1.AgentExitedResponse"> & {
  * Use `create(AgentExitedResponseSchema)` to create a new message.
  */
 export const AgentExitedResponseSchema: GenMessage<AgentExitedResponse> = /*@__PURE__*/
-  messageDesc(file_mycel_v1_node, 16);
+  messageDesc(file_mycel_v1_node, 17);
 
 /**
  * @generated from message mycel.v1.RegisterAgentResponse
@@ -743,7 +800,7 @@ export type RegisterAgentResponse = Message<"mycel.v1.RegisterAgentResponse"> & 
  * Use `create(RegisterAgentResponseSchema)` to create a new message.
  */
 export const RegisterAgentResponseSchema: GenMessage<RegisterAgentResponse> = /*@__PURE__*/
-  messageDesc(file_mycel_v1_node, 17);
+  messageDesc(file_mycel_v1_node, 18);
 
 /**
  * @generated from message mycel.v1.RefreshAgentTokenRequest
@@ -767,7 +824,7 @@ export type RefreshAgentTokenRequest = Message<"mycel.v1.RefreshAgentTokenReques
  * Use `create(RefreshAgentTokenRequestSchema)` to create a new message.
  */
 export const RefreshAgentTokenRequestSchema: GenMessage<RefreshAgentTokenRequest> = /*@__PURE__*/
-  messageDesc(file_mycel_v1_node, 18);
+  messageDesc(file_mycel_v1_node, 19);
 
 /**
  * @generated from message mycel.v1.RefreshAgentTokenResponse
@@ -789,5 +846,5 @@ export type RefreshAgentTokenResponse = Message<"mycel.v1.RefreshAgentTokenRespo
  * Use `create(RefreshAgentTokenResponseSchema)` to create a new message.
  */
 export const RefreshAgentTokenResponseSchema: GenMessage<RefreshAgentTokenResponse> = /*@__PURE__*/
-  messageDesc(file_mycel_v1_node, 19);
+  messageDesc(file_mycel_v1_node, 20);
 

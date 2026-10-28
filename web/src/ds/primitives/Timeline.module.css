@@ -1,0 +1,137 @@
+.timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.step {
+  position: relative;
+  transition: opacity var(--t-move) var(--ease-out);
+}
+.step[data-state='future'] {
+  opacity: 0.32;
+}
+
+.gap {
+  margin-left: calc(76px + var(--s-3));
+  padding: 2px 0 2px var(--s-4);
+  border-left: var(--hairline) dashed var(--line-strong);
+  font-family: var(--font-data);
+  font-size: var(--text-xs);
+  color: var(--text-2);
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 76px 16px minmax(0, 1fr);
+  column-gap: var(--s-3);
+  align-items: start;
+}
+
+.time {
+  padding-top: 6px;
+  text-align: right;
+  font-family: var(--font-data);
+  font-size: var(--text-xs);
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.rail {
+  position: relative;
+  align-self: stretch;
+  display: flex;
+  justify-content: center;
+}
+.rail::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 1px;
+  background: var(--line);
+}
+.mark {
+  position: relative;
+  margin-top: 10px;
+  width: 7px;
+  height: 7px;
+  border: var(--hairline) solid var(--text-2);
+  background: var(--bg-1);
+  transform: rotate(45deg);
+}
+.step[data-kind='message'] .mark {
+  background: var(--text-2);
+  transform: none;
+  border-radius: 50%;
+}
+.step[data-tone='alert'] .mark {
+  border-color: var(--warn);
+}
+.step[data-tone='alert'][data-kind='message'] .mark {
+  background: var(--warn);
+}
+.step[data-state='current'] .mark {
+  border-color: var(--accent);
+  box-shadow:
+    0 0 0 3px var(--bg-1),
+    0 0 0 4px var(--accent-dim);
+}
+.step[data-state='current'][data-kind='message'] .mark {
+  background: var(--accent);
+}
+
+.content {
+  min-width: 0;
+  padding: var(--s-1) 0 var(--s-3);
+}
+
+.head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-2);
+  flex-wrap: wrap;
+  width: 100%;
+  padding: 2px var(--s-2);
+  margin-left: calc(-1 * var(--s-2));
+  background: none;
+  border: 0;
+  border-radius: var(--r-1);
+  text-align: left;
+  cursor: default;
+}
+button.head {
+  cursor: pointer;
+}
+button.head:hover {
+  background: var(--bg-2);
+}
+.step[data-state='current'] .head {
+  background: var(--bg-3);
+}
+
+.actor {
+  font-family: var(--font-data);
+  font-size: var(--text-sm);
+  color: var(--text-0);
+}
+.title {
+  font-size: var(--text-sm);
+  color: var(--text-1);
+}
+.step[data-tone='alert'] .title {
+  color: var(--warn);
+}
+.step[data-tone='muted'] .title,
+.step[data-tone='muted'] .actor {
+  color: var(--text-2);
+}
+
+.body {
+  margin-top: var(--s-1);
+  font-size: var(--text-sm);
+  color: var(--text-1);
+}

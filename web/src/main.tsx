@@ -5,11 +5,13 @@ import './ds/base.css';
 import { App } from './app/App';
 import { boot } from './app/boot';
 import { registerCoreCommands } from './app/commands/core';
+import { registerViewCommands } from './app/commands/eager';
 import { applyPrefs } from './app/prefs';
 import { registerServiceWorker } from './app/pwa/push';
 
 applyPrefs();
 registerCoreCommands();
+registerViewCommands();
 void boot();
 void registerServiceWorker();
 

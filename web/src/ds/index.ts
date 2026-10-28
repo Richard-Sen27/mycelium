@@ -17,3 +17,13 @@ export { Tabs, type TabsProps, type TabItem } from './primitives/Tabs';
 export { Kbd, modKey, isApple } from './primitives/Kbd';
 export { EmptyState, type EmptyStateProps } from './primitives/EmptyState';
 export { Skeleton, type SkeletonProps } from './primitives/Skeleton';
+// P6-views-b: time formatting and the shared clock, safe message bodies, a virtualised log, a replay timeline, checkbox and textarea.
+export { useNow, ago, fmtDuration, fmtElapsed, fmtBytes, fmtClock, parseTime, parseGoDuration, goDuration } from './time';
+export { Ago, Elapsed } from './primitives/Ago';
+export { MessageBody, tokenizeBody, type MessageBodyProps, type BodyToken } from './primitives/MessageBody';
+export { LogView, splitLines, LOG_ROW, type LogViewProps } from './primitives/LogView';
+export { Timeline, type TimelineProps, type TimelineStep } from './primitives/Timeline';
+export { Checkbox, type CheckboxProps } from './primitives/Checkbox';
+export { TextArea, type TextAreaProps } from './primitives/TextArea';
+export { ConfirmButton, type ConfirmButtonProps } from './primitives/ConfirmButton';
+export { radioGroupKeyDown } from './primitives/radio';

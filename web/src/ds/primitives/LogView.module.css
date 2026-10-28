@@ -1,0 +1,58 @@
+.view {
+  position: relative;
+  overflow: auto;
+  height: 100%;
+  min-height: 240px;
+  background: var(--bg-0);
+  border: var(--hairline) solid var(--line-faint);
+  font-family: var(--font-data);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums slashed-zero;
+  color: var(--text-1);
+  contain: content;
+}
+.view:focus-visible {
+  outline: 1px solid var(--accent-dim);
+  outline-offset: -1px;
+}
+
+.inner {
+  position: relative;
+  min-width: max-content;
+}
+
+.row {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 20px;
+  line-height: 20px;
+  display: flex;
+  gap: var(--s-3);
+  padding-right: var(--s-4);
+  white-space: pre;
+}
+.row:hover {
+  background: var(--bg-2);
+}
+.row[data-alert] .text {
+  color: var(--warn);
+}
+
+.n {
+  flex: none;
+  width: calc(var(--gutter) + var(--s-4));
+  padding-right: var(--s-2);
+  text-align: right;
+  color: var(--text-3);
+  border-right: var(--hairline) solid var(--line-faint);
+  user-select: none;
+}
+
+.text {
+  color: var(--text-1);
+}
+.text mark {
+  background: var(--accent-dim);
+  color: var(--text-0);
+}

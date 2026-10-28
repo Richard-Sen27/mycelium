@@ -1,0 +1,228 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-5);
+  max-width: 880px;
+}
+
+.head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-4);
+}
+.heading {
+  font-size: var(--text-xl);
+  font-weight: 400;
+}
+.count {
+  font-family: var(--font-data);
+  font-size: var(--text-sm);
+  color: var(--text-2);
+}
+.note {
+  font-size: var(--text-sm);
+  color: var(--text-2);
+}
+
+.queue {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+}
+
+/* A pending request: the instrument frame, full width, with corner ticks. */
+.card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  padding: var(--s-4);
+  background: var(--bg-1);
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--r-1);
+  outline: none;
+  scroll-margin: var(--s-6);
+  animation: assemble var(--t-assemble) var(--ease-out) backwards;
+}
+.card[data-selected] {
+  border-color: var(--accent);
+}
+.card[data-new] {
+  animation:
+    assemble var(--t-assemble) var(--ease-out) backwards,
+    arrive calc(var(--t-assemble) * 4) var(--ease-in-out) 2;
+}
+.card:focus-visible {
+  box-shadow: var(--focus-ring);
+}
+.tickTl,
+.tickBr {
+  position: absolute;
+  width: var(--tick);
+  height: var(--tick);
+  border: 0 solid var(--warn);
+  pointer-events: none;
+}
+.tickTl {
+  top: -1px;
+  left: -1px;
+  border-top-width: 1px;
+  border-left-width: 1px;
+}
+.tickBr {
+  bottom: -1px;
+  right: -1px;
+  border-bottom-width: 1px;
+  border-right-width: 1px;
+}
+
+.cardHead {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-3);
+  min-width: 0;
+}
+.kind {
+  font-family: var(--font-data);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-label);
+  color: var(--warn);
+}
+.id {
+  font-family: var(--font-data);
+  font-size: var(--text-xs);
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.age {
+  margin-left: auto;
+  font-family: var(--font-data);
+  font-size: var(--text-xs);
+  color: var(--text-1);
+  white-space: nowrap;
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: var(--s-3) var(--s-4);
+  margin: 0;
+}
+.facts dt {
+  font-family: var(--font-data);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-label);
+  color: var(--text-2);
+}
+.facts dd {
+  margin: 2px 0 0;
+  font-family: var(--font-data);
+  font-size: var(--text-md);
+  color: var(--text-0);
+  overflow-wrap: anywhere;
+}
+
+.spec {
+  font-family: var(--font-data);
+  font-size: var(--text-sm);
+  color: var(--text-1);
+}
+.reason {
+  font-size: var(--text-sm);
+}
+.error {
+  color: var(--warn);
+  font-size: var(--text-sm);
+}
+
+.decide {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  padding-top: var(--s-3);
+  border-top: var(--hairline) solid var(--line-faint);
+}
+.durations {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+}
+.chip {
+  min-height: 36px;
+  min-width: 52px;
+  padding: 0 var(--s-3);
+  background: var(--bg-2);
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--r-1);
+  font-family: var(--font-data);
+  font-size: var(--text-sm);
+  color: var(--text-1);
+  cursor: pointer;
+  transition:
+    border-color var(--t-quick) linear,
+    color var(--t-quick) linear;
+}
+.chip:hover:not(:disabled) {
+  border-color: var(--line-strong);
+  color: var(--text-0);
+}
+.chip[aria-checked='true'] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.req {
+  font-size: var(--text-xs);
+  color: var(--text-2);
+}
+.buttons {
+  display: flex;
+  gap: var(--s-3);
+  justify-content: flex-end;
+}
+.big {
+  min-height: 44px;
+  min-width: 120px;
+}
+
+.history {
+  margin-top: var(--s-2);
+}
+
+@keyframes assemble {
+  from {
+    clip-path: inset(0 0 calc(100% - 2px) 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+/* A new request: the border breathes in the accent twice, then rests. */
+@keyframes arrive {
+  50% {
+    border-color: var(--accent);
+  }
+}
+
+@media (max-width: 640px) {
+  .page {
+    gap: var(--s-4);
+  }
+  .card {
+    padding: var(--s-4) var(--s-3);
+  }
+  .facts {
+    grid-template-columns: 1fr 1fr;
+  }
+  .buttons > * {
+    flex: 1;
+  }
+  .chip {
+    min-height: 44px;
+    flex: 1;
+  }
+}

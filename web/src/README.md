@@ -31,7 +31,7 @@ initial load. Paths are `/<id>/*`, so a view may use nested relative routes
 | nodes         | `/nodes`                                              | P6-views-a                                       |
 | agents        | `/agents`                                             | P6-views-a                                       |
 | traces        | `/traces`                                             | P6-views-b (traces and cost, audit replay)       |
-| machine       | `/machine` (node mode only; guarded)                  | not named in D025; placeholder marked P6-views-a |
+| machine       | `/machine` (node mode only; guarded)                  | P6-views-b ("This machine", restrict only)       |
 | settings      | `/settings`                                           | done here                                        |
 
 The constellation must import `three` / `@react-three/*` only from its own
@@ -50,7 +50,14 @@ api.rpc.grants.approveGrant({ id }); // every Connect service: tokens, nodes, us
 // channels, grants, control, jobs, artifacts, events
 api.local?.grants(); // node mode: /api/local/* ("This machine", restrict only)
 api.hub?.me(); // hub mode: /api/auth/*, /api/push/*
+await api.download('/api/artifacts/art_01…'); // Blob; hub: session cookie, node: bearer via /api/hub
+await api.upload('/api/artifacts?name=x.csv', file); // hub only: cookie + CSRF; returns the JSON reply
 ```
+
+`download` and `upload` are for the hub's plain HTTP routes that are not
+Connect calls (artifact bytes); they set the mode's auth headers, so views
+never build those headers themselves. A plain `<a href="/api/artifacts/…">`
+works in hub mode only (the node proxy needs the bearer a link cannot carry).
 
 Headers, cookies, CSRF (`Mycel-Csrf`) and the local bearer are handled by
 the transports; views never set them. In node mode `api.rpc` goes through the
@@ -132,9 +139,13 @@ useEffect(() => registerCommands((ctx) => [
 ]), [id]);
 ```
 
-Register at module level for global commands (every CLI-equivalent action:
-D025 wants the palette to cover all of them) or in an effect for
-view-local ones. Ids must be unique. Destructive and network-wide actions
+Commands that must be in the palette before their view is first visited
+(every CLI-equivalent action: D025 wants the palette to cover all of them)
+live in a light `views/<id>/commands.ts` that exports a `register…()`
+function; `app/commands/eager.ts` imports and calls it at startup (main.tsx).
+Such a file may import stores, the API, `ds` helpers and `registerCommands`
+only, never view components or heavy libraries, because it lands in the
+initial load. View-local commands register in an effect. Ids must be unique. Destructive and network-wide actions
 take a `confirm`. Already registered here: navigation (`g` + digit too),
 sign-out, theme, motion, freeze/unfreeze, approve/deny per pending grant,
 and free text to the caller's orchestrator.
