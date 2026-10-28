@@ -189,15 +189,31 @@ func Backends() []Backend { return registry }
 // registered and available. It never picks "fake" unless the profile lists
 // it explicitly, and the fake backend only exists under build tag
 // fakesandbox.
-func Select(ctx context.Context, profile *mycelv1.Profile) (Backend, error) { panic(ErrNotImplemented) }
+func Select(ctx context.Context, profile *mycelv1.Profile) (Backend, error) {
+	return selectBackend(ctx, profile)
+}
 
 // ResolveLimits merges profile limits with job overrides; job values may
 // only lower them. Zero profile values take the package defaults
 // (2 CPUs, 4 GiB RAM, 20 GiB disk, 512 processes, 1 h wall clock).
 func ResolveLimits(profile *mycelv1.Limits, override *mycelv1.Limits) (Limits, error) {
-	panic(ErrNotImplemented)
+	return resolveLimits(profile, override)
 }
 
 // ValidateMount refuses $HOME, /, system roots and paths that escape by
 // symlink; GuestPath must be absolute and not under /workspace.
-func ValidateMount(m Mount) error { panic(ErrNotImplemented) }
+func ValidateMount(m Mount) error {
+	_, err := resolveMount(m)
+	return err
+}
+
+// ResolveMount validates m like ValidateMount and returns it with HostPath
+// replaced by its symlink-resolved form and GuestPath cleaned; backends
+// mount the returned HostPath, never the original.
+func ResolveMount(m Mount) (Mount, error) { return resolveMount(m) }
+
+// ValidateEnv checks a sandbox environment: keys match
+// ^[A-Za-z_][A-Za-z0-9_]*$, no MYCEL_* keys, no proxy variables (*_PROXY,
+// ALL_PROXY, NO_PROXY in any case; the backend sets those), no NUL in
+// values. Every backend and the hub call it.
+func ValidateEnv(env map[string]string) error { return validateEnv(env) }

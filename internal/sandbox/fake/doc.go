@@ -12,4 +12,12 @@
 // Pause/Resume via SIGSTOP/SIGCONT on unix, Destroy removing the directory.
 // It does not enforce memory, CPU or process limits and reports Isolation
 // "none".
+//
+// Notes on the implementation: the wall clock and the log cap are enforced
+// by sandbox.Runner, not here. Capabilities reports Egress true so the fake
+// profile's allowlist is accepted, but the proxy variables are only set, not
+// enforced. On unix every command leads its own process group and
+// TERM/KILL/Destroy signal the whole group; on windows only the leader is
+// killed (a Job Object to kill the whole tree will come with the daemon's
+// windows work).
 package fake
