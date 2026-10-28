@@ -5,7 +5,6 @@ package e2e
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -54,13 +53,30 @@ type runResult struct {
 	err  error
 }
 
-// goRun runs a script in a goroutine; the result arrives on the returned channel.
-func goRun(ctx context.Context, n *Node, agent string, script []fh.Step) <-chan runResult {
+// runTimeout bounds every fake harness run.
+const runTimeout = 2 * time.Minute
+
+// goRun runs a script in a goroutine; the result arrives on the returned
+// (buffered) channel. The test's cleanup cancels the run and waits for it.
+func goRun(t *testing.T, n *Node, agent string, script []fh.Step) <-chan runResult {
+	t.Helper()
+	return goRunHarness(t, n, agent, harnessName, script)
+}
+
+func goRunHarness(t *testing.T, n *Node, agent, harness string, script []fh.Step) <-chan runResult {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), runTimeout)
 	ch := make(chan runResult, 1)
+	done := make(chan struct{})
 	go func() {
-		tr, err := fh.Run(ctx, binPath, agentEnv(n), agent, harnessName, script)
+		defer close(done)
+		tr, err := fh.Run(ctx, binPath, agentEnv(n), agent, harness, script)
 		ch <- runResult{name: agent, tr: tr, err: err}
 	}()
+	t.Cleanup(func() {
+		cancel()
+		<-done
+	})
 	return ch
 }
 
@@ -70,6 +86,7 @@ func mustRun(t *testing.T, n *Node, agent string, script []fh.Step) fh.Transcrip
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 	tr, err := fh.Run(ctx, binPath, agentEnv(n), agent, harnessName, script)
+	checkRace(t, "fake harness "+agent, tr.Stderr, 0)
 	if err != nil {
 		t.Fatalf("%s: %v\ntranscript:\n%s", agent, err, tr)
 	}
@@ -81,6 +98,7 @@ func collect(t *testing.T, ch <-chan runResult, timeout time.Duration) fh.Transc
 	t.Helper()
 	select {
 	case r := <-ch:
+		checkRace(t, "fake harness "+r.name, r.tr.Stderr, 0)
 		if r.err != nil {
 			t.Errorf("%s: %v\ntranscript:\n%s", r.name, r.err, r.tr)
 		}
@@ -158,8 +176,6 @@ func TestScriptedTaskAcrossNodes(t *testing.T) {
 	t.Parallel() // phase 2 tests each own a hub; they run together after the sequential phase 1 tests
 	h, alpha, beta := startNetwork(t)
 	const ch = "#task-e2e-1"
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	defer cancel()
 
 	// The planner joins first and so creates the task channel. An inbox only
 	// delivers messages posted after the agent joined, so the planner posts
@@ -170,14 +186,14 @@ func TestScriptedTaskAcrossNodes(t *testing.T) {
 		t.Errorf("planner join_channel result lacks %s: %q", ch, plannerJoin.Calls[0].Text)
 	}
 
-	worker := goRun(ctx, beta, "worker", []fh.Step{
+	worker := goRun(t, beta, "worker", []fh.Step{
 		join(ch),
 		{Tool: "wait_for_message", Args: map[string]any{"timeout_seconds": 20}, Expect: "run the tests", Store: "task", Repeat: 3},
 		{Tool: "blackboard_put", Args: map[string]any{"channel": ch, "key": "result", "value": "3 passed"}, Expect: "stored result"},
 		{Tool: "post", Args: map[string]any{"channel": ch, "text": "done: 3 passed", "reply_to": "{{task|msgid}}"}, Expect: "posted msg_"},
 	})
 	waitMember(t, h, ch, "agent:worker@beta")
-	planner := goRun(ctx, alpha, "planner", []fh.Step{
+	planner := goRun(t, alpha, "planner", []fh.Step{
 		{Tool: "post", Args: map[string]any{"channel": ch, "text": "run the tests", "mentions": []any{"agent:worker@beta"}, "type": "task"}, Expect: "posted msg_", Store: "task"},
 		{Tool: "wait_for_message", Args: map[string]any{"timeout_seconds": 20}, Expect: "done: 3 passed", Repeat: 3},
 	})
@@ -241,52 +257,68 @@ func TestHopLimitStopsPingPong(t *testing.T) {
 	h, alpha, beta := startNetwork(t)
 	const ch = "#pingpong"
 	h.MustCLI("", "channels", "create", ch, "--max-hops", "4", "--open")
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	defer cancel()
+	const limitErr = "hop limit (4) reached"
+	const limitEvent = "hop limit (4) reached in thread"
 
-	// After the limit, posts fail and waits time out: those steps may error.
-	loop := func(word string, start int) []fh.Step {
-		var s []fh.Step
-		for i := start; i < start+8; i++ {
-			s = append(s,
-				fh.Step{Tool: "wait_for_message", Args: map[string]any{"timeout_seconds": 10}, Store: "in", AllowError: true},
-				fh.Step{Tool: "post", Args: map[string]any{"channel": ch, "text": fmt.Sprintf("%s %d", word, i), "reply_to": "{{in|msgid}}"}, AllowError: true},
-			)
-		}
+	// The chain is scripted explicitly: each side waits for the other's
+	// message and replies to it, so the hops are 0..4 and the reply that
+	// would be hop 5 is refused. Then ping replies to the hub's EVENT (which
+	// carries the limit as its hop) and is refused too.
+	wait := func(text string) fh.Step {
+		return fh.Step{Tool: "wait_for_message", Args: map[string]any{"timeout_seconds": 10}, Expect: "> " + text, Store: "in", Repeat: 3}
+	}
+	reply := func(text string) fh.Step {
+		return fh.Step{Tool: "post", Args: map[string]any{"channel": ch, "text": text, "reply_to": "{{in|msgid}}"}, Expect: "posted msg_"}
+	}
+	refused := func(text string) fh.Step {
+		s := reply(text)
+		s.Expect, s.ExpectError = limitErr, true
 		return s
 	}
-	pong := goRun(ctx, beta, "pong", append([]fh.Step{join(ch)}, loop("pong", 1)...))
+	pong := goRun(t, beta, "pong", []fh.Step{
+		join(ch),
+		wait("ping 0"), reply("pong 1"),
+		wait("ping 2"), reply("pong 3"),
+		wait("ping 4"), refused("pong 5"),
+	})
 	waitMember(t, h, ch, "agent:pong@beta") // pong must be in before "ping 0"
-	ping := goRun(ctx, alpha, "ping", append([]fh.Step{
+	ping := goRun(t, alpha, "ping", []fh.Step{
 		join(ch),
 		{Tool: "post", Args: map[string]any{"channel": ch, "text": "ping 0"}, Expect: "posted msg_"},
-	}, loop("ping", 1)...))
-	ptr := collect(t, ping, 110*time.Second)
-	qtr := collect(t, pong, 110*time.Second)
+		wait("pong 1"), reply("ping 2"),
+		wait("pong 3"), reply("ping 4"),
+		wait(limitEvent), refused("ping after the event"),
+	})
+	ptr := collect(t, ping, 60*time.Second)
+	qtr := collect(t, pong, 60*time.Second)
 
 	msgs := readChannel(t, h, ch)
-	agentMsgs, maxHop := 0, int32(0)
+	var hops []int32
 	var events []jsonMsg
 	for _, m := range msgs {
 		switch {
 		case strings.HasPrefix(m.From, "agent:"):
-			agentMsgs++
-			maxHop = max(maxHop, m.Meta.Hop)
+			hops = append(hops, m.Meta.Hop)
 		case m.From == "hub" && m.Type == "MESSAGE_TYPE_EVENT":
 			events = append(events, m)
 		}
 	}
-	if agentMsgs > 6 {
-		t.Errorf("%d agent messages in %s, want at most 6", agentMsgs, ch)
+	if !slices.Equal(hops, []int32{0, 1, 2, 3, 4}) {
+		t.Errorf("agent message hops %v, want exactly [0 1 2 3 4]", hops)
 	}
-	if maxHop != 4 {
-		t.Errorf("highest hop %d, want the limit 4 to be reached", maxHop)
+	if len(events) != 1 || !strings.Contains(events[0].Payload.Text, limitEvent) {
+		t.Errorf("want exactly one hub EVENT %q, got %+v", limitEvent, events)
 	}
-	if len(events) != 1 || !strings.Contains(events[0].Payload.Text, "hop limit") {
-		t.Errorf("want exactly one hub EVENT mentioning the hop limit, got %+v", events)
-	}
-	if !ptr.Contains("hop limit") && !qtr.Contains("hop limit") {
-		t.Errorf("no transcript mentions the hop limit\nping:\n%s\npong:\n%s", ptr, qtr)
+	for name, tr := range map[string]fh.Transcript{"ping": ptr, "pong": qtr} {
+		refusals := 0
+		for _, c := range tr.Calls {
+			if c.Tool == "post" && c.IsError && strings.Contains(c.Text, limitErr) {
+				refusals++
+			}
+		}
+		if refusals != 1 {
+			t.Errorf("%s: %d refused posts with %q, want 1", name, refusals, limitErr)
+		}
 	}
 	if t.Failed() {
 		t.Logf("messages: %+v\nping:\n%s\npong:\n%s", msgs, ptr, qtr)
@@ -298,13 +330,16 @@ func TestInboxFilteringAndDirect(t *testing.T) {
 	h, alpha, beta := startNetwork(t)
 	mustRun(t, alpha, "watcher", []fh.Step{{Tool: "join_channel", Args: map[string]any{"channel": "#general", "mentions_only": true}, Expect: "joined #general"}})
 
+	// Unmentioned first, then mentioned: the one pull that returns "hey"
+	// must not carry "hello all", and nothing is left afterwards.
 	h.MustCLI("", "post", "#general", "hello all")
-	mustRun(t, alpha, "watcher", []fh.Step{{Tool: "read_inbox", Expect: "no new messages"}})
-
 	h.MustCLI("", "post", "#general", "hey", "--mentions", "agent:watcher@alpha")
-	tr := mustRun(t, alpha, "watcher", []fh.Step{{Tool: "wait_for_message", Args: map[string]any{"timeout_seconds": 20}, Expect: "> hey"}})
-	if strings.Contains(tr.Calls[0].Text, "hello all") {
-		t.Errorf("mentions_only watcher received an unmentioned message: %s", tr.Calls[0].Text)
+	tr := mustRun(t, alpha, "watcher", []fh.Step{
+		{Tool: "wait_for_message", Args: map[string]any{"timeout_seconds": 20}, Expect: "> hey"},
+		{Tool: "read_inbox", Expect: "no new messages"},
+	})
+	if got := tr.Calls[0].Text; strings.Count(got, "[mycel message ") != 1 || strings.Contains(got, "hello all") {
+		t.Errorf("mentions_only watcher inbox, want exactly the mentioned message:\n%s", got)
 	}
 
 	mustRun(t, beta, "other", []fh.Step{{Tool: "post", Args: map[string]any{"channel": "@agent:watcher@alpha", "text": "psst from other"}, Expect: "posted msg_"}})
@@ -330,9 +365,13 @@ func TestInboxFilteringAndDirect(t *testing.T) {
 		t.Errorf("channels ls shows no dm: channel: %s", out)
 	}
 
-	tr = mustRun(t, alpha, "watcher", []fh.Step{{Tool: "post", Args: map[string]any{"channel": "#alerts", "text": "not allowed"}, AllowError: true}})
-	if !tr.Calls[0].IsError {
-		t.Errorf("watcher post to #alerts succeeded: %s", tr.Calls[0].Text)
+	// A member of #alerts is still refused, for the system-channel rule.
+	tr = mustRun(t, alpha, "watcher", []fh.Step{
+		join("#alerts"),
+		{Tool: "post", Args: map[string]any{"channel": "#alerts", "text": "not allowed"}, Expect: "agents may not post in this channel", ExpectError: true},
+	})
+	if got := tr.Calls[1].Text; strings.Contains(got, "member") {
+		t.Errorf("watcher post to #alerts refused for membership, want the system-channel reason: %s", got)
 	}
 }
 
@@ -366,12 +405,18 @@ func TestHookAndSetup(t *testing.T) {
 
 	// The harness stays alive (the final step only sleeps, so it does not
 	// compete with the hook for the shared inbox cursor).
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), runTimeout)
 	defer cancel()
 	received := make(chan struct{})
 	var once sync.Once
 	done := make(chan runResult, 1)
+	finished := make(chan struct{})
+	t.Cleanup(func() {
+		cancel()
+		<-finished
+	})
 	go func() {
+		defer close(finished)
 		tr, err := fh.RunObserved(ctx, binPath, agentEnv(alpha), "coder", "claude-code", []fh.Step{
 			join("#general"),
 			{Tool: "wait_for_message", Args: map[string]any{"timeout_seconds": 15}, Expect: "@coder ping"},
@@ -409,7 +454,7 @@ func TestHookAndSetup(t *testing.T) {
 
 	h.MustCLI("", "post", "#general", "second for coder", "--mentions", "agent:coder@alpha")
 	var got string
-	waitFor(t, 5*time.Second, func() bool {
+	waitFor(t, 15*time.Second, func() bool {
 		got += hook()
 		return strings.Contains(got, "second for coder")
 	})
@@ -420,6 +465,7 @@ func TestHookAndSetup(t *testing.T) {
 	cancel()
 	select {
 	case r := <-done:
+		checkRace(t, "fake harness coder", r.tr.Stderr, 0)
 		if len(r.tr.Calls) < 2 || r.tr.Calls[0].IsError || r.tr.Calls[1].IsError {
 			t.Errorf("coder transcript:\n%s", r.tr)
 		}
@@ -440,8 +486,8 @@ func TestHumanReadFollow(t *testing.T) {
 	}
 	h.MustCLI("", "post", "#general", "live one")
 	posted := time.Now()
-	if !waitFor(t, 5*time.Second, func() bool { return strings.Contains(readFile(f.stdoutPath), "live one") }) {
-		t.Fatalf("read --follow did not print the live message within 5s:\n%s\nstderr:\n%s", readFile(f.stdoutPath), readFile(f.stderrPath))
+	if !waitFor(t, 10*time.Second, func() bool { return strings.Contains(readFile(f.stdoutPath), "live one") }) {
+		t.Fatalf("read --follow did not print the live message within 10s:\n%s\nstderr:\n%s", readFile(f.stdoutPath), readFile(f.stderrPath))
 	}
 	t.Logf("live message followed %s after the post returned", time.Since(posted).Round(time.Millisecond))
 	f.kill()

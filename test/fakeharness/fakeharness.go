@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
@@ -20,16 +21,34 @@ import (
 // whose value is handed to `mycel mcp` as --local-addr.
 const EnvLocalAddr = "MYCEL_LOCAL_ADDR"
 
+// EnvTranscriptDir names the environment variable (in the env passed to Run)
+// naming a directory: when set, a run writes its transcript there as
+// <agent>.txt when it ends, so a test can inspect the transcripts of workers
+// that a node daemon started.
+const EnvTranscriptDir = "MYCEL_FAKE_TRANSCRIPT_DIR"
+
+// RaceDetected is what the race detector prints on stderr.
+const RaceDetected = "WARNING: DATA RACE"
+
+// RaceExitCode is the exit code of a race-enabled binary that halts on its
+// first data race (GORACE=halt_on_error=1, see ChildEnv).
+const RaceExitCode = 66
+
+// raceOptions is added to GORACE by ChildEnv.
+const raceOptions = "halt_on_error=1"
+
 // Step is one scripted tool call.
 type Step struct {
-	Tool       string         `json:"tool"`                  // MCP tool name; "" with SleepMS only pauses
-	Args       map[string]any `json:"args,omitempty"`        // tool arguments; {{name}} and {{name|msgid}} are substituted in strings
-	Expect     string         `json:"expect,omitempty"`      // substring the result text must contain ("" = any)
-	Store      string         `json:"store,omitempty"`       // store the result text under this name
-	Repeat     int            `json:"repeat,omitempty"`      // run up to Repeat times until Expect matches
-	AllowError bool           `json:"allow_error,omitempty"` // a tool error, substitution failure or Expect mismatch does not fail the script
-	SleepMS    int            `json:"sleep_ms,omitempty"`    // with Tool "": pause this long (keeps the MCP session alive without consuming the inbox)
-	Usage      *StepUsage     `json:"usage,omitempty"`       // usage the `mycel fakeharness` wrapper reports for this step (stream-json)
+	Tool        string         `json:"tool"`                   // MCP tool name; "" with SleepMS only pauses
+	Args        map[string]any `json:"args,omitempty"`         // tool arguments; {{name}}, {{name|msgid}} and {{name|msgid:<substring>}} are substituted in strings
+	Expect      string         `json:"expect,omitempty"`       // substring the result text must contain ("" = any)
+	ExpectAll   []string       `json:"expect_all,omitempty"`   // each must appear in some result of this step (retried with Repeat); Expect applies to the last
+	ExpectError bool           `json:"expect_error,omitempty"` // the step must end in a tool error whose text contains Expect (retried with Repeat)
+	Store       string         `json:"store,omitempty"`        // store the result text under this name
+	Repeat      int            `json:"repeat,omitempty"`       // run up to Repeat times until Expect matches
+	AllowError  bool           `json:"allow_error,omitempty"`  // a tool error, substitution failure or Expect mismatch does not fail the script
+	SleepMS     int            `json:"sleep_ms,omitempty"`     // with Tool "": pause this long (keeps the MCP session alive without consuming the inbox)
+	Usage       *StepUsage     `json:"usage,omitempty"`        // usage the `mycel fakeharness` wrapper reports for this step (stream-json)
 }
 
 // StepUsage is the token and cost usage a step reports when the script runs
@@ -103,11 +122,11 @@ func Run(ctx context.Context, bin string, env []string, agent, harness string, s
 }
 
 // RunObserved is Run with a callback invoked after every call, so a test can
-// act while the script is still running. The child environment is the
-// parent's without MYCEL_* variables, plus env (which must hold MYCEL_HOME).
-// When env sets MYCEL_LOCAL_ADDR it is passed as --local-addr.
-func RunObserved(ctx context.Context, bin string, env []string, agent, harness string, script []Step, observe func(Call)) (Transcript, error) {
-	var tr Transcript
+// act while the script is still running. The child environment is
+// ChildEnv(env...); env must hold MYCEL_HOME. When env sets MYCEL_LOCAL_ADDR
+// it is passed as --local-addr; when it sets MYCEL_FAKE_TRANSCRIPT_DIR the
+// transcript is written there at the end.
+func RunObserved(ctx context.Context, bin string, env []string, agent, harness string, script []Step, observe func(Call)) (tr Transcript, err error) {
 	args := []string{"mcp", "--agent", agent}
 	if harness != "" {
 		args = append(args, "--harness", harness)
@@ -115,8 +134,13 @@ func RunObserved(ctx context.Context, bin string, env []string, agent, harness s
 	if addr := lookupEnv(env, EnvLocalAddr); addr != "" {
 		args = append(args, "--local-addr", addr)
 	}
+	if dir := lookupEnv(env, EnvTranscriptDir); dir != "" {
+		// Registered first, so it runs after the session is closed and
+		// the adapter's stderr is in the transcript.
+		defer func() { writeTranscript(dir, agent, tr, err) }()
+	}
 	cmd := exec.Command(bin, args...) //nolint:gosec // the binary under test
-	cmd.Env = childEnv(env)
+	cmd.Env = ChildEnv(env...)
 	stderr := &syncBuffer{}
 	cmd.Stderr = stderr
 
@@ -132,17 +156,55 @@ func RunObserved(ctx context.Context, bin string, env []string, agent, harness s
 	if _, err := cs.ListTools(ctx, nil); err != nil {
 		return tr, fmt.Errorf("fakeharness %s: list tools: %w", agent, err)
 	}
+	tr, err = RunSession(ctx, cs, script, observe)
+	if err != nil {
+		return tr, fmt.Errorf("fakeharness %s: %w", agent, err)
+	}
+	return tr, nil
+}
 
-	stored := map[string]string{}
+// writeTranscript writes the transcript of agent's run to <dir>/<agent>.txt,
+// best effort.
+func writeTranscript(dir, agent string, tr Transcript, runErr error) {
+	text := tr.String()
+	if runErr != nil {
+		text += "---- run failed ----\n" + runErr.Error() + "\n"
+	} else {
+		text += "---- run succeeded ----\n"
+	}
+	name := strings.Map(func(r rune) rune {
+		if r == '/' || r == '\\' || r == ':' {
+			return '_'
+		}
+		return r
+	}, agent)
+	if os.MkdirAll(dir, 0o700) != nil {
+		return
+	}
+	_ = os.WriteFile(filepath.Join(dir, name+".txt"), []byte(text), 0o600)
+}
+
+// RunSession runs script on an established MCP client session and returns
+// the transcript. observe, if not nil, is called after every call.
+func RunSession(ctx context.Context, cs *mcp.ClientSession, script []Step, observe func(Call)) (Transcript, error) {
+	var tr Transcript
+	stored := map[string]storedResult{}
 	for i, st := range script {
 		if err := runStep(ctx, cs, &tr, stored, i, st, observe); err != nil {
-			return tr, fmt.Errorf("fakeharness %s: step %d (%s): %w", agent, i, st.Tool, err)
+			return tr, fmt.Errorf("step %d (%s): %w", i, st.Tool, err)
 		}
 	}
 	return tr, nil
 }
 
-func runStep(ctx context.Context, cs *mcp.ClientSession, tr *Transcript, stored map[string]string, i int, st Step, observe func(Call)) error {
+// storedResult is a result text kept for {{name}} substitution, with the
+// Expect of the step that stored it (used by {{name|msgid}}).
+type storedResult struct {
+	text   string
+	expect string
+}
+
+func runStep(ctx context.Context, cs *mcp.ClientSession, tr *Transcript, stored map[string]storedResult, i int, st Step, observe func(Call)) error {
 	if st.Tool == "" {
 		if st.SleepMS <= 0 {
 			return errors.New("step has no tool")
@@ -156,41 +218,65 @@ func runStep(ctx context.Context, cs *mcp.ClientSession, tr *Transcript, stored 
 			return nil
 		}
 	}
+	record := func(c Call) {
+		tr.Calls = append(tr.Calls, c)
+		if observe != nil {
+			observe(c)
+		}
+	}
 	tries := max(st.Repeat, 1)
+	seen := make([]bool, len(st.ExpectAll))
 	var last Call
 	for range tries {
 		args, err := substitute(st.Args, stored)
 		if err != nil {
 			last = Call{Index: len(tr.Calls), Step: i, Tool: st.Tool, Text: "substitution: " + err.Error(), IsError: true}
-			tr.Calls = append(tr.Calls, last)
-			if observe != nil {
-				observe(last)
-			}
+			record(last)
 			if st.AllowError {
 				return nil
 			}
 			return err
 		}
 		last = call(ctx, cs, len(tr.Calls), i, st.Tool, args)
-		tr.Calls = append(tr.Calls, last)
-		if observe != nil {
-			observe(last)
-		}
+		record(last)
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
 		if st.Store != "" {
-			stored[st.Store] = last.Text
+			stored[st.Store] = storedResult{text: last.Text, expect: st.Expect}
+		}
+		if st.ExpectError {
+			if last.IsError && strings.Contains(last.Text, st.Expect) {
+				return nil
+			}
+			continue
 		}
 		if last.IsError && !st.AllowError {
 			return fmt.Errorf("tool error: %s", last.Text)
 		}
-		if strings.Contains(last.Text, st.Expect) {
+		all := true
+		for k, s := range st.ExpectAll {
+			seen[k] = seen[k] || strings.Contains(last.Text, s)
+			all = all && seen[k]
+		}
+		if all && strings.Contains(last.Text, st.Expect) {
 			return nil
 		}
 	}
 	if st.AllowError {
 		return nil
+	}
+	if st.ExpectError {
+		return fmt.Errorf("expected a tool error containing %q after %d tries, last result (error %t): %s", st.Expect, tries, last.IsError, last.Text)
+	}
+	var missing []string
+	for k, s := range st.ExpectAll {
+		if !seen[k] {
+			missing = append(missing, s)
+		}
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("never saw %q in %d tries, last result: %s", missing, tries, last.Text)
 	}
 	return fmt.Errorf("expected %q in result after %d tries, last result: %s", st.Expect, tries, last.Text)
 }
@@ -213,13 +299,16 @@ func call(ctx context.Context, cs *mcp.ClientSession, index, step int, tool stri
 }
 
 var (
-	placeholderRe = regexp.MustCompile(`\{\{\s*([A-Za-z0-9_.-]+)\s*(?:\|\s*([a-z]+)\s*)?\}\}`)
+	// {{name}}, {{name|msgid}} or {{name|msgid:<substring>}}.
+	placeholderRe = regexp.MustCompile(`\{\{\s*([A-Za-z0-9_.-]+)\s*(?:\|\s*([a-z]+)(?::([^}]*))?\s*)?\}\}`)
 	msgIDRe       = regexp.MustCompile(`msg_[A-Za-z0-9]+`)
+	// headerIDRe finds the id in a quoted message header.
+	headerIDRe = regexp.MustCompile(`\[mycel message (msg_[A-Za-z0-9]+)`)
 )
 
 // substitute returns a deep copy of args with placeholders in every string
 // replaced from stored.
-func substitute(args map[string]any, stored map[string]string) (map[string]any, error) {
+func substitute(args map[string]any, stored map[string]storedResult) (map[string]any, error) {
 	if args == nil {
 		return nil, nil
 	}
@@ -230,7 +319,7 @@ func substitute(args map[string]any, stored map[string]string) (map[string]any, 
 	return v.(map[string]any), nil
 }
 
-func substValue(v any, stored map[string]string) (any, error) {
+func substValue(v any, stored map[string]storedResult) (any, error) {
 	switch x := v.(type) {
 	case string:
 		return substString(x, stored)
@@ -269,34 +358,62 @@ func substValue(v any, stored map[string]string) (any, error) {
 	}
 }
 
-func substString(s string, stored map[string]string) (string, error) {
+func substString(s string, stored map[string]storedResult) (string, error) {
 	var firstErr error
+	fail := func(err error) {
+		if firstErr == nil {
+			firstErr = err
+		}
+	}
 	out := placeholderRe.ReplaceAllStringFunc(s, func(m string) string {
 		sub := placeholderRe.FindStringSubmatch(m)
 		val, ok := stored[sub[1]]
 		if !ok {
-			if firstErr == nil {
-				firstErr = fmt.Errorf("no stored result %q", sub[1])
-			}
+			fail(fmt.Errorf("no stored result %q", sub[1]))
 			return m
 		}
 		switch sub[2] {
 		case "":
-			return val
+			return val.text
 		case "msgid":
-			id := msgIDRe.FindString(val)
-			if id == "" && firstErr == nil {
-				firstErr = fmt.Errorf("no msg_ id in stored result %q: %q", sub[1], val)
+			near := val.expect
+			if sub[3] != "" {
+				near = sub[3]
+			}
+			id := msgID(val.text, near)
+			if id == "" {
+				fail(fmt.Errorf("no msg_ id in stored result %q: %q", sub[1], val.text))
 			}
 			return id
 		default:
-			if firstErr == nil {
-				firstErr = fmt.Errorf("unknown filter %q", sub[2])
-			}
+			fail(fmt.Errorf("unknown filter %q", sub[2]))
 			return m
 		}
 	})
 	return out, firstErr
+}
+
+// msgID picks a message id from a result text. When near occurs in text,
+// it is the id of the last quoted message header that starts at or before
+// the first occurrence, so a wait result holding several messages yields
+// the one that matched. Otherwise, and for results without headers such as
+// "posted msg_…", it is the first msg_ id in the text.
+func msgID(text, near string) string {
+	if near != "" {
+		if idx := strings.Index(text, near); idx >= 0 {
+			id := ""
+			for _, m := range headerIDRe.FindAllStringSubmatchIndex(text, -1) {
+				if m[0] > idx {
+					break
+				}
+				id = text[m[2]:m[3]]
+			}
+			if id != "" {
+				return id
+			}
+		}
+	}
+	return msgIDRe.FindString(text)
 }
 
 func lookupEnv(env []string, key string) string {
@@ -309,16 +426,28 @@ func lookupEnv(env []string, key string) string {
 	return v
 }
 
-// childEnv is the parent's environment without MYCEL_* variables, plus env.
-func childEnv(env []string) []string {
-	var out []string
+// ChildEnv is the environment for a test's child process: the parent's
+// environment without MYCEL_* variables, with halt_on_error=1 added to
+// GORACE (a race-enabled child then exits with RaceExitCode on its first
+// data race), plus extra.
+func ChildEnv(extra ...string) []string {
+	out := make([]string, 0, len(extra)+64)
+	gorace := ""
 	for _, kv := range os.Environ() {
-		if strings.HasPrefix(strings.ToUpper(kv), "MYCEL_") {
-			continue
+		k, v, _ := strings.Cut(kv, "=")
+		switch {
+		case strings.HasPrefix(strings.ToUpper(k), "MYCEL_"):
+		case k == "GORACE":
+			gorace = v
+		default:
+			out = append(out, kv)
 		}
-		out = append(out, kv)
 	}
-	return append(out, env...)
+	if !strings.Contains(gorace, raceOptions) {
+		gorace = strings.TrimSpace(gorace + " " + raceOptions)
+	}
+	out = append(out, "GORACE="+gorace)
+	return append(out, extra...)
 }
 
 // syncBuffer is a bytes.Buffer safe for the exec copier and readers.

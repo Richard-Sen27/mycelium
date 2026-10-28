@@ -20,6 +20,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	fh "github.com/richard-sen27/mycelium/test/fakeharness"
 )
 
 const (
@@ -48,7 +50,7 @@ func runMain(m *testing.M) int {
 		name += ".exe"
 	}
 	binPath = filepath.Join(dir, name)
-	args := []string{"build", "-tags", "fakesandbox"}
+	args := []string{"build", "-tags", "fakesandbox,fakeharness"}
 	if raceEnabled {
 		args = append(args, "-race")
 	}
@@ -66,9 +68,9 @@ func runMain(m *testing.M) int {
 // freePorts asks the OS for n distinct free TCP ports on 127.0.0.1. Every
 // listener stays open until all n ports are chosen, then all are released.
 // There is a small race: another process may grab a port before the daemon
-// binds it. On a test runner this is rare enough to accept; the alternative
-// (passing :0 and reading back bound addresses) would not let a restarted
-// hub keep the advertised URL.
+// binds it; startHub retries then. Only the hub's API and bus ports need
+// this (a restarted hub must keep its advertised URL); local API addresses
+// are bound to port 0 and read back from the daemon's ready line.
 func freePorts(t *testing.T, n int) []int {
 	t.Helper()
 	ports := make([]int, 0, n)
@@ -90,16 +92,20 @@ func freePorts(t *testing.T, n int) []int {
 }
 
 // childEnv is the test process's environment without any MYCEL_* variables,
-// plus the given overrides.
+// with GORACE=halt_on_error=1, plus the given overrides (fh.ChildEnv).
 func childEnv(extra ...string) []string {
-	var env []string
-	for _, kv := range os.Environ() {
-		if strings.HasPrefix(strings.ToUpper(kv), "MYCEL_") {
-			continue
-		}
-		env = append(env, kv)
+	return fh.ChildEnv(extra...)
+}
+
+// checkRace fails the test when a child's stderr shows a data race or the
+// child exited with the race detector's exit code.
+func checkRace(t *testing.T, what, stderr string, exit int) {
+	t.Helper()
+	if strings.Contains(stderr, fh.RaceDetected) {
+		t.Errorf("%s: data race reported:\n%s", what, stderr)
+	} else if exit == fh.RaceExitCode {
+		t.Errorf("%s: exit code %d (race detector)\n%s", what, exit, stderr)
 	}
-	return append(env, extra...)
 }
 
 // runCLI runs the binary to completion and returns its output and exit code.
@@ -124,6 +130,7 @@ func runCLI(t *testing.T, env []string, args ...string) (stdout, stderr string, 
 	if ctx.Err() != nil {
 		t.Fatalf("mycel %s: timed out after %s\nstderr: %s", strings.Join(args, " "), cliTimeout, errb.String())
 	}
+	checkRace(t, "mycel "+strings.Join(args, " "), errb.String(), exit)
 	return out.String(), errb.String(), exit
 }
 
@@ -210,6 +217,8 @@ func startProc(t *testing.T, name, logDir string, env []string, args ...string) 
 
 	t.Cleanup(func() {
 		p.stop()
+		code, _ := p.Wait(0)
+		checkRace(t, name, readFile(p.stderrPath), code)
 		if t.Failed() {
 			t.Logf("==== %s stdout ====\n%s", name, readFile(p.stdoutPath))
 			t.Logf("==== %s stderr ====\n%s", name, readFile(p.stderrPath))
@@ -258,22 +267,36 @@ func (p *proc) Wait(timeout time.Duration) (exitCode int, ok bool) {
 // offset and decodes it into v.
 func (p *proc) waitReady(t *testing.T, offset int64, v any) {
 	t.Helper()
+	if err := p.waitReadyErr(offset, v); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// errAddrInUse marks a daemon that exited before it was ready because a
+// port it was given was taken meanwhile (see freePorts).
+var errAddrInUse = errors.New("address already in use")
+
+func (p *proc) waitReadyErr(offset int64, v any) error {
 	deadline := time.Now().Add(readyTimeout)
 	for {
 		if line, ok := firstLine(p.stdoutPath, offset); ok {
 			if err := json.Unmarshal([]byte(line), v); err != nil {
-				t.Fatalf("%s: ready line is not JSON: %v: %q", p.name, err, line)
+				return fmt.Errorf("%s: ready line is not JSON: %w: %q", p.name, err, line)
 			}
-			return
+			return nil
 		}
 		select {
 		case <-p.done:
 			code, _ := p.Wait(0)
-			t.Fatalf("%s exited with code %d before it was ready\nstderr:\n%s", p.name, code, readFile(p.stderrPath))
+			stderr := readFile(p.stderrPath)
+			if strings.Contains(stderr, errAddrInUse.Error()) {
+				return fmt.Errorf("%s exited with code %d before it was ready: %w\nstderr:\n%s", p.name, code, errAddrInUse, stderr)
+			}
+			return fmt.Errorf("%s exited with code %d before it was ready\nstderr:\n%s", p.name, code, stderr)
 		default:
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("%s not ready after %s\nstderr:\n%s", p.name, readyTimeout, readFile(p.stderrPath))
+			return fmt.Errorf("%s not ready after %s\nstderr:\n%s", p.name, readyTimeout, readFile(p.stderrPath))
 		}
 		time.Sleep(pollStep)
 	}
@@ -322,7 +345,7 @@ type Hub struct {
 	CAFingerprint string
 	APIPort       int
 	BusPort       int
-	LocalPort     int
+	LocalAddr     string // host:port of the hub daemon's local API (bound to port 0)
 	Proc          *proc
 }
 
@@ -345,17 +368,36 @@ type daemonReady struct {
 	} `json:"node"`
 }
 
+// startHubAttempts bounds the retries of startHub when a chosen port was
+// taken between freePorts and the daemon binding it.
+const startHubAttempts = 3
+
 func startHub(t *testing.T) *Hub {
 	t.Helper()
+	for attempt := 1; ; attempt++ {
+		h := initHub(t)
+		err := h.start()
+		if err == nil {
+			return h
+		}
+		if !errors.Is(err, errAddrInUse) || attempt == startHubAttempts {
+			t.Fatal(err)
+		}
+		t.Logf("hub start attempt %d: a port was taken; retrying with new ports", attempt)
+	}
+}
+
+// initHub runs `hub init` in a fresh root with fresh ports.
+func initHub(t *testing.T) *Hub {
+	t.Helper()
 	root := t.TempDir()
-	ports := freePorts(t, 3)
+	ports := freePorts(t, 2)
 	h := &Hub{
-		t:         t,
-		Root:      root,
-		Home:      filepath.Join(root, "hub"),
-		APIPort:   ports[0],
-		BusPort:   ports[1],
-		LocalPort: ports[2],
+		t:       t,
+		Root:    root,
+		Home:    filepath.Join(root, "hub"),
+		APIPort: ports[0],
+		BusPort: ports[1],
 	}
 	api := "127.0.0.1:" + strconv.Itoa(h.APIPort)
 	out, errOut, code := runCLI(t, childEnv("MYCEL_HOME="+h.Home),
@@ -378,22 +420,31 @@ func startHub(t *testing.T) *Hub {
 	h.AdminKey = init.AdminAPIKey
 	h.AdminUserID = init.AdminUserID
 	h.CAFingerprint = init.CAFingerprint
-	h.Start()
 	return h
 }
 
-// Start starts (or restarts) the hub daemon in the hub home with the same ports.
+// Start starts (or restarts) the hub daemon in the hub home with the same
+// API and bus ports.
 func (h *Hub) Start() {
-	t := h.t
-	t.Helper()
-	offset := fileSize(filepath.Join(h.Root, "hub.stdout.log"))
-	h.Proc = startProc(t, "hub", h.Root, childEnv("MYCEL_HOME="+h.Home),
-		"daemon", "--json", "--local-addr", "127.0.0.1:"+strconv.Itoa(h.LocalPort))
-	var ready daemonReady
-	h.Proc.waitReady(t, offset, &ready)
-	if ready.Hub == nil || ready.Node == nil {
-		t.Fatalf("hub daemon ready line lacks hub or node: %+v", ready)
+	h.t.Helper()
+	if err := h.start(); err != nil {
+		h.t.Fatal(err)
 	}
+}
+
+func (h *Hub) start() error {
+	offset := fileSize(filepath.Join(h.Root, "hub.stdout.log"))
+	h.Proc = startProc(h.t, "hub", h.Root, childEnv("MYCEL_HOME="+h.Home),
+		"daemon", "--json", "--local-addr", "127.0.0.1:0")
+	var ready daemonReady
+	if err := h.Proc.waitReadyErr(offset, &ready); err != nil {
+		return err
+	}
+	if ready.Hub == nil || ready.Node == nil || ready.Node.LocalAddr == "" {
+		return fmt.Errorf("hub daemon ready line lacks hub, node or node.local_addr: %+v", ready)
+	}
+	h.LocalAddr = ready.Node.LocalAddr
+	return nil
 }
 
 // CLI runs mycel as the admin (MYCEL_HOME = hub home, whose config.yaml holds the admin key).
@@ -462,18 +513,19 @@ func createToken(t *testing.T, h *Hub, apiKey string, args ...string) tokenCreat
 }
 
 // joinNode creates a token for name (as admin, or with apiKey), joins a fresh
-// home with it and starts the node's daemon.
-func joinNode(t *testing.T, h *Hub, name, caps, apiKey string) *Node {
+// home with it and starts the node's daemon. extraEnv is added to the
+// daemon's environment (and so to the workers it spawns).
+func joinNode(t *testing.T, h *Hub, name, caps, apiKey string, extraEnv ...string) *Node {
 	t.Helper()
 	args := []string{"--name", name}
 	if caps != "" {
 		args = append(args, "--caps", caps)
 	}
 	tok := createToken(t, h, apiKey, args...)
-	return joinWithToken(t, h, name, tok.Token)
+	return joinWithToken(t, h, name, tok.Token, extraEnv...)
 }
 
-func joinWithToken(t *testing.T, h *Hub, name, token string) *Node {
+func joinWithToken(t *testing.T, h *Hub, name, token string, extraEnv ...string) *Node {
 	t.Helper()
 	n := &Node{t: t, Home: filepath.Join(h.Root, name), Name: name, Token: token}
 	env := childEnv("MYCEL_HOME=" + n.Home)
@@ -481,8 +533,10 @@ func joinWithToken(t *testing.T, h *Hub, name, token string) *Node {
 	if code != 0 {
 		t.Fatalf("join %s: exit %d\nstdout: %s\nstderr: %s", name, code, out, errOut)
 	}
-	port := freePorts(t, 1)[0]
-	n.Proc = startProc(t, name, h.Root, env, "daemon", "--json", "--local-addr", "127.0.0.1:"+strconv.Itoa(port))
+	// Workers write their stderr under the node home; a race there is the
+	// worker's (mycel fakeharness) own.
+	t.Cleanup(func() { checkWorkerLogs(t, n.Home) })
+	n.Proc = startProc(t, name, h.Root, append(env, extraEnv...), "daemon", "--json", "--local-addr", "127.0.0.1:0")
 	var ready daemonReady
 	n.Proc.waitReady(t, 0, &ready)
 	if ready.Node == nil || ready.Node.LocalAddr == "" {
@@ -491,6 +545,34 @@ func joinWithToken(t *testing.T, h *Hub, name, token string) *Node {
 	n.LocalAddr = ready.Node.LocalAddr
 	n.LocalURL = "http://" + ready.Node.LocalAddr
 	return n
+}
+
+// workerLogs returns the stderr logs of the workers a node daemon started,
+// by worker name.
+func workerLogs(home string) map[string]string {
+	logs := map[string]string{}
+	_ = filepath.WalkDir(home, func(p string, d os.DirEntry, err error) error {
+		if err != nil {
+			return nil //nolint:nilerr // best effort: skip unreadable entries
+		}
+		if !d.IsDir() && d.Name() == "stderr.log" && filepath.Base(filepath.Dir(filepath.Dir(p))) == "workers" {
+			logs[filepath.Base(filepath.Dir(p))] = readFile(p)
+		}
+		return nil
+	})
+	return logs
+}
+
+// checkWorkerLogs fails the test on a data race in a worker's stderr and
+// logs every worker's stderr when the test failed.
+func checkWorkerLogs(t *testing.T, home string) {
+	t.Helper()
+	for name, log := range workerLogs(home) {
+		checkRace(t, "worker "+name, log, 0)
+		if t.Failed() {
+			t.Logf("==== worker %s stderr ====\n%s", name, log)
+		}
+	}
 }
 
 // Status fetches the node's local /api/status. It returns nil if the endpoint

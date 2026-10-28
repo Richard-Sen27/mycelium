@@ -2,18 +2,36 @@
 // client that starts `mycel mcp --agent <name>` as a subprocess (stdio) and
 // runs a script of tool calls with simple assertions.
 //
-// Contract (owned by the orchestrator):
+// API:
 //
 //	type Step struct {
-//	    Tool   string            // MCP tool name
-//	    Args   map[string]any    // tool arguments
-//	    Expect string            // substring that must appear in the tool result text ("" = any)
-//	    Store  string            // store the result text under this name for later {{name}} substitution
-//	    Repeat int               // run this step up to Repeat times until Expect matches (for waits)
-//	    Usage  *StepUsage        // phase 3, optional: {"input":N,"output":M,"usd":X} reported by
-//	                             // `mycel fakeharness` as stream-json when the script runs as a worker
+//	    Tool        string         // MCP tool name; "" with SleepMS only pauses
+//	    Args        map[string]any // arguments; {{name}}, {{name|msgid}}, {{name|msgid:<substring>}}
+//	    Expect      string         // substring the result must contain ("" = any)
+//	    ExpectAll   []string       // each must appear in some result of the step
+//	    ExpectError bool           // the step must end in a tool error containing Expect
+//	    Store       string         // keep the result text under this name
+//	    Repeat      int            // retry up to Repeat times until the step is satisfied
+//	    AllowError  bool           // errors and mismatches do not fail the script
+//	    SleepMS     int            // with Tool "": pause
+//	    Usage       *StepUsage     // usage `mycel fakeharness` reports for the step (stream-json)
 //	}
-//	func Run(ctx context.Context, bin string, env []string, agent, harness string, script []Step) (Transcript, error)
+//	func Run(ctx, bin string, env []string, agent, harness string, script []Step) (Transcript, error)
+//	func RunObserved(ctx, bin, env, agent, harness, script, observe func(Call)) (Transcript, error)
+//	func RunSession(ctx, cs *mcp.ClientSession, script []Step, observe func(Call)) (Transcript, error)
+//	func LoadScript(path string) ([]Step, error)
+//	func ChildEnv(extra ...string) []string
+//
+// {{name|msgid}} takes the id from the quoted message header that precedes
+// the first occurrence of the storing step's Expect (or of <substring> with
+// the msgid:<substring> form), else the first msg_ id in the text.
+//
+// The child environment is ChildEnv(env...): the parent's without MYCEL_*
+// variables, GORACE with halt_on_error=1, then env. MYCEL_LOCAL_ADDR in env
+// becomes --local-addr; MYCEL_FAKE_TRANSCRIPT_DIR in env makes every run
+// write its transcript to <dir>/<agent>.txt, which is how tests read the
+// transcripts of workers that a node daemon started with `mycel
+// fakeharness`.
 //
 // Transcript records every call and result so a test can assert on the
 // whole conversation. Scripts can also be loaded from JSON files.

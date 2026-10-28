@@ -282,9 +282,11 @@ func assertHubRefusesIdentity(t *testing.T, h *Hub, dir string) {
 			for ctx.Err() == nil && !revoked.Load() {
 				time.Sleep(50 * time.Millisecond)
 			}
-			if !revoked.Load() {
-				busErr = errors.New("bus accepted the revoked certificate")
-			}
+		}
+		// Only an authorization refusal counts: a connect error that is
+		// not one (such as the context timing out) is no proof.
+		if !revoked.Load() {
+			busErr = fmt.Errorf("bus did not refuse the revoked certificate (connect error: %v)", err)
 		}
 	})
 	wg.Go(func() {
