@@ -27,6 +27,7 @@ egress:
     - registry-1.docker.io
     - auth.docker.io
     - production.cloudflare.docker.com
+    - "*.cloudfront.docker.com"
     - deb.debian.org
     - security.debian.org
 brokers: [docker-nested, ollama]
