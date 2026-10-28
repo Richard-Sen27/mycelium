@@ -553,6 +553,9 @@ func (s *server) submitJob(ctx context.Context, a actor, in *mycelv1.JobSpec) (*
 		s.auditDenied(ctx, a.auditID(), string(policy.ActionJobRun), "job", map[string]any{"reason": d.Reason})
 		return nil, connect.NewError(connect.CodePermissionDenied, errors.New(d.Reason))
 	}
+	if s.frozenAll() {
+		return nil, s.jobRefusal(ctx, a, connect.CodeFailedPrecondition, "network frozen")
+	}
 	if !s.ch.limiter.Allow(owner, rateKeyJobs, cfg.submitsPerMinute) {
 		return nil, connect.NewError(connect.CodeResourceExhausted, fmt.Errorf("at most %d job submissions per minute per owner", cfg.submitsPerMinute))
 	}
@@ -790,6 +793,11 @@ func (s *server) scheduleOnce(ctx context.Context) time.Duration {
 	if time.Since(s.jobs.lastPrune) >= cfg.pruneEvery {
 		s.jobs.lastPrune = time.Now()
 		s.pruneJobs(ctx)
+	}
+	// While the network is frozen nothing is dispatched or timed out; the
+	// nodes have paused their sandboxes.
+	if s.frozenAll() {
+		return next
 	}
 	queued, err := s.st.jobsInState(ctx, mycelv1.JobState_JOB_STATE_QUEUED, scheduleBatch)
 	if err != nil {
@@ -1040,6 +1048,8 @@ func (s *server) jobFinished(ctx context.Context, actorID, id string) {
 		"state": stateWord(j.State), "exit_code": j.ExitCode, "error": j.Error, "node": j.Node, "artifacts": arts,
 		"log_bytes": j.LogBytes,
 	})
+	// A finished job's grants end with it.
+	s.endGrantsWhere(ctx, grantFilter{subject: "job:" + id}, hubActor.id, "job finished", true)
 	cancelledInQueue := j.State == mycelv1.JobState_JOB_STATE_CANCELLED && j.Node == ""
 	if j.Spec.GetChannel() != "" && !cancelledInQueue {
 		s.postJobResult(ctx, j, arts)

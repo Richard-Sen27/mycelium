@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"slices"
+	"strings"
 	"time"
 
 	"connectrpc.com/connect"
@@ -134,14 +135,14 @@ func (c *channelService) CreateChannel(ctx context.Context, req *connect.Request
 		return nil, err
 	}
 	self := userMemberID(u.ID)
-	members := []memberRow{{Member: self, Role: memberOwner}}
+	members := []memberRow{{Member: self, Role: memberOwner, AddedBy: u.ID}}
 	for _, m := range req.Msg.GetMembers() {
 		id, err := s.resolveParticipant(ctx, m)
 		if err != nil {
 			return nil, err
 		}
 		if !slices.ContainsFunc(members, func(r memberRow) bool { return r.Member == id }) {
-			members = append(members, memberRow{Member: id, Role: roleFor(id)})
+			members = append(members, memberRow{Member: id, Role: roleFor(id), AddedBy: u.ID})
 		}
 	}
 	pol := req.Msg.GetPolicy()
@@ -252,11 +253,14 @@ func (c *channelService) AddMember(ctx context.Context, req *connect.Request[myc
 	if err != nil {
 		return nil, err
 	}
+	if ch.Name == channels.Approvals && strings.HasPrefix(id, "agent:") {
+		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("agents may not be members of "+channels.Approvals))
+	}
 	role, err := memberRole(id, req.Msg.GetRole())
 	if err != nil {
 		return nil, err
 	}
-	if err := s.st.addMember(ctx, ch.Name, id, role); err != nil {
+	if err := s.st.addMember(ctx, ch.Name, id, role, u.ID); err != nil {
 		return nil, s.internalError("add member", err)
 	}
 	s.audit(ctx, u.ID, string(policy.ActionChannelMemberAdd), "channel:"+ch.Name, outcomeOK, map[string]any{"member": id, "role": role})

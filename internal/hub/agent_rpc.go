@@ -22,6 +22,7 @@ var agentMethods = map[string]bool{
 	bus.RPCAgentListMessages: true,
 	bus.RPCAgentJobRun:       true, bus.RPCAgentJobGet: true, bus.RPCAgentJobCancel: true, bus.RPCAgentJobLogs: true,
 	bus.RPCAgentArtifactList: true,
+	bus.RPCAgentGrantRequest: true, bus.RPCAgentGrantList: true,
 }
 
 // maxSubTags bounds the tags of a subscription filter.
@@ -176,6 +177,10 @@ func (s *server) serveAgentRPC(ctx context.Context, node, method string, data []
 		req = &mycelv1.AgentJobLogsRequest{}
 	case bus.RPCAgentArtifactList:
 		req = &mycelv1.AgentListArtifactsRequest{}
+	case bus.RPCAgentGrantRequest:
+		req = &mycelv1.AgentRequestGrantRequest{}
+	case bus.RPCAgentGrantList:
+		req = &mycelv1.AgentListGrantsRequest{}
 	default:
 		return nil, rpcErr(connect.CodeNotFound, "unknown method %s", method)
 	}
@@ -192,7 +197,7 @@ func (s *server) serveAgentRPC(ctx context.Context, node, method string, data []
 	if a.paused != "" {
 		switch r := req.(type) {
 		case *mycelv1.AgentPostRequest, *mycelv1.AgentBlackboardPutRequest, *mycelv1.AgentJoinChannelRequest,
-			*mycelv1.AgentRunJobRequest:
+			*mycelv1.AgentRunJobRequest, *mycelv1.AgentRequestGrantRequest:
 			s.auditDenied(ctx, a.id, method, a.id, map[string]any{"reason": "agent paused", "paused_reason": a.paused})
 			return nil, rpcErr(connect.CodeFailedPrecondition, "agent paused (%s)", a.paused)
 		case *mycelv1.InboxPullRequest:
@@ -270,6 +275,10 @@ func (s *server) serveAgentRPC(ctx context.Context, node, method string, data []
 			return nil, err
 		}
 		return &mycelv1.ListArtifactsResponse{Artifacts: arts}, nil
+	case *mycelv1.AgentRequestGrantRequest:
+		return s.agentRequestGrant(ctx, a, r)
+	case *mycelv1.AgentListGrantsRequest:
+		return s.agentListGrants(ctx, a)
 	}
 	return nil, internalRPC()
 }
@@ -304,6 +313,10 @@ func (s *server) agentJoin(ctx context.Context, a actor, name string, sub *mycel
 	if !channels.ValidName(name) {
 		return nil, invalidArg("invalid channel name %q (direct channels are created by posting to @<id>)", name)
 	}
+	if name == channels.Approvals {
+		s.auditDenied(ctx, a.id, "channel.join", "channel:"+name, map[string]any{"reason": "agents may not join #approvals"})
+		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("agents may not join "+channels.Approvals))
+	}
 	sub, err := validateSubscription(name, sub)
 	if err != nil {
 		return nil, err
@@ -320,7 +333,7 @@ func (s *server) agentJoin(ctx context.Context, a actor, name string, sub *mycel
 			Name: name, Type: mycelv1.ChannelType_CHANNEL_TYPE_TASK, OwnerID: a.p.OwnerID, Creator: a.id, CreatorOwner: a.p.OwnerID,
 			Policy: &mycelv1.ChannelPolicy{OpenToMembers: true}, CreatedAt: nowString(),
 		}
-		created, err := s.st.ensureChannel(ctx, row, []memberRow{{Member: a.id, Role: memberOwner}})
+		created, err := s.st.ensureChannel(ctx, row, []memberRow{{Member: a.id, Role: memberOwner, AddedBy: addedBySelf}})
 		if errors.Is(err, errChannelCap) {
 			return nil, connect.NewError(connect.CodeResourceExhausted, errors.New("too many channels created by this agent or owner"))
 		}
@@ -355,7 +368,7 @@ func (s *server) agentJoin(ctx context.Context, a actor, name string, sub *mycel
 		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("channel "+name+" is closed; its owner or an admin must add this agent"))
 	}
 	if !isMember {
-		if err := s.st.addMember(ctx, name, a.id, memberAgent); err != nil {
+		if err := s.st.addMember(ctx, name, a.id, memberAgent, addedBySelf); err != nil {
 			return nil, s.internalError("add member", err)
 		}
 		s.audit(ctx, a.id, "channel.join", "channel:"+name, outcomeOK, nil)

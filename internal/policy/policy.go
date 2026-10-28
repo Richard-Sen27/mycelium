@@ -8,6 +8,8 @@ package policy
 
 import (
 	"context"
+	"strings"
+	"time"
 
 	"github.com/richard-sen27/mycelium/internal/channels"
 )
@@ -212,8 +214,8 @@ type Policy interface {
 //     grant attaches to (the node owner decides about their machine); node
 //     sharing: get for the owner and admins, set for the owner and admins;
 //     freezes: channel freeze/unfreeze by the channel owner or admins;
-//     freeze all by admins and members (anyone may pull the emergency
-//     brake), unfreeze all by admins only (spec: unfreezing needs the owner);
+//     freeze all and unfreeze all by admins only (spec: the global freeze
+//     is a hub-admin action); freeze status for every user;
 //     agents may request grants for themselves and list their own;
 //   - anything else is denied.
 func Default() Policy { return defaultPolicy{} }
@@ -267,6 +269,26 @@ var knownActions = map[Action]bool{
 	ActionArtifactDelete: true,
 	ActionProfileList:    true,
 	ActionProfileSet:     true,
+
+	ActionGrantRequest:    true,
+	ActionGrantList:       true,
+	ActionGrantGet:        true,
+	ActionGrantApprove:    true,
+	ActionGrantDeny:       true,
+	ActionGrantRevoke:     true,
+	ActionNodeSharingGet:  true,
+	ActionNodeSharingSet:  true,
+	ActionChannelFreeze:   true,
+	ActionChannelUnfreeze: true,
+	ActionFreezeAll:       true,
+	ActionUnfreezeAll:     true,
+	ActionFreezeStatus:    true,
+}
+
+// grantAgentActions are the phase 5 actions agents may be considered for.
+var grantAgentActions = map[Action]bool{
+	ActionGrantRequest: true,
+	ActionGrantList:    true,
 }
 
 // jobActions are the phase 4 actions, decided by authorizeJob for members
@@ -323,6 +345,9 @@ func (defaultPolicy) Authorize(_ context.Context, p Principal, a Action, r Resou
 	if p.Kind == KindAgent && p.ID != "" && (channelActions[a] || a == ActionAgentList) {
 		return authorizeAgentChannel(p, a, r)
 	}
+	if p.Kind == KindAgent && p.ID != "" && grantAgentActions[a] {
+		return authorizeAgentGrant(p, a, r)
+	}
 	if p.Kind == KindAgent && p.ID != "" && jobActions[a] {
 		if p.OwnerID == "" {
 			return deny("agent without owner")
@@ -363,11 +388,28 @@ func (defaultPolicy) Authorize(_ context.Context, p Principal, a Action, r Resou
 		}
 		return deny("not a member of this channel")
 	case ActionChannelPolicyUpdate, ActionChannelMemberAdd, ActionChannelMemberRemove, ActionChannelArchive,
-		ActionChannelUsageGet, ActionChannelUsageReset:
+		ActionChannelUsageGet, ActionChannelUsageReset, ActionChannelFreeze, ActionChannelUnfreeze:
 		if owns {
 			return allow()
 		}
 		return deny("only the channel owner or an admin may do this")
+	case ActionGrantList, ActionFreezeStatus:
+		return allow()
+	case ActionGrantRequest, ActionGrantGet, ActionGrantRevoke:
+		if owns {
+			return allow()
+		}
+		return deny("only the owner or an admin may do this")
+	case ActionGrantApprove, ActionGrantDeny:
+		if owns {
+			return allow()
+		}
+		return deny("only an admin or the owner of the node the grant attaches to may decide it")
+	case ActionNodeSharingGet, ActionNodeSharingSet:
+		if owns {
+			return allow()
+		}
+		return deny("only the node's owner or an admin may do this")
 	}
 	if jobActions[a] {
 		return authorizeJob(p.ID, p, a, r)
@@ -439,3 +481,109 @@ func authorizeAgentChannel(p Principal, a Action, r Resource) Decision {
 }
 
 func isTaskName(name string) bool { return channels.IsTask(name) }
+
+// authorizeAgentGrant applies the phase 5 rules to an agent principal: it
+// may request grants for itself (Resource.ID is the subject) and list its
+// own grants (the caller filters).
+func authorizeAgentGrant(p Principal, a Action, r Resource) Decision {
+	switch a {
+	case ActionGrantList:
+		return allow()
+	case ActionGrantRequest:
+		if r.ID != "" && r.ID == p.ID {
+			return allow()
+		}
+		return deny("agents may only request grants for themselves")
+	default:
+		return deny("agents may not do this")
+	}
+}
+
+// MaxGrantTTL is the longest grant duration.
+const MaxGrantTTL = 24 * time.Hour
+
+// NeedsApproval implements GrantDecider: the first rule in req.Rules that
+// matches the request auto-grants it with the requested TTL. A rule
+// matches when its channel, kind and node patterns match ("*" matches any
+// run of characters, an empty pattern matches anything), the requested TTL
+// is within its max_ttl (an empty max_ttl allows up to MaxGrantTTL), the
+// subject holds fewer active grants of the kind than max_count (0 = 1),
+// egress and docker-host requests match only rules naming that kind,
+// and, for a read-write mount, the rule has ReadOnly false (a read_only
+// rule matches only read-only mounts; hub.yaml defaults read_only to
+// true, so read-write mounts never auto-approve by accident). Requests that
+// match no rule, or carry an invalid TTL, need approval.
+func (defaultPolicy) NeedsApproval(req GrantRequestInfo) (bool, string, *GrantRule) {
+	ttl, err := time.ParseDuration(req.TTL)
+	if err != nil || ttl <= 0 || ttl > MaxGrantTTL {
+		return true, req.TTL, nil
+	}
+	for i := range req.Rules {
+		r := req.Rules[i]
+		if ruleMatches(r, req, ttl) {
+			return false, req.TTL, &r
+		}
+	}
+	return true, req.TTL, nil
+}
+
+func ruleMatches(r GrantRule, req GrantRequestInfo, ttl time.Duration) bool {
+	if !Glob(r.Channel, req.Channel) || !Glob(r.Kind, req.Kind) || !Glob(r.Node, req.Node) {
+		return false
+	}
+	// Egress and host Docker widen what a sandbox can reach: only a rule
+	// naming the kind exactly auto-approves them, never a wildcard.
+	if (req.Kind == "egress" || req.Kind == "docker-host") && r.Kind != req.Kind {
+		return false
+	}
+	// A read-write mount matches only a rule that allows read-write
+	// (ReadOnly false); ReadOnly has no effect on other kinds.
+	if req.Kind == "mount" && !req.ReadOnlyMount && r.ReadOnly {
+		return false
+	}
+	limit := MaxGrantTTL
+	if r.MaxTTL != "" {
+		d, err := time.ParseDuration(r.MaxTTL)
+		if err != nil || d <= 0 {
+			return false
+		}
+		limit = min(d, MaxGrantTTL)
+	}
+	if ttl > limit {
+		return false
+	}
+	maxCount := r.MaxCount
+	if maxCount <= 0 {
+		maxCount = 1
+	}
+	return req.ActiveOfKind < maxCount
+}
+
+// Glob reports whether value matches pattern, where '*' matches any run of
+// characters (including none) and every other character matches itself. An
+// empty pattern matches everything.
+func Glob(pattern, value string) bool {
+	if pattern == "" || pattern == "*" {
+		return true
+	}
+	parts := strings.Split(pattern, "*")
+	if len(parts) == 1 {
+		return pattern == value
+	}
+	if !strings.HasPrefix(value, parts[0]) {
+		return false
+	}
+	value = value[len(parts[0]):]
+	last := parts[len(parts)-1]
+	for _, mid := range parts[1 : len(parts)-1] {
+		i := strings.Index(value, mid)
+		if i < 0 {
+			return false
+		}
+		value = value[i+len(mid):]
+	}
+	return strings.HasSuffix(value, last)
+}
+
+// Default implements GrantDecider.
+var _ GrantDecider = defaultPolicy{}

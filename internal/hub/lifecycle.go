@@ -197,7 +197,13 @@ func (s *server) pauseLocked(ctx context.Context, fx *lifeFx, actorID string, a 
 	if a.RevokedAt != "" {
 		return nil
 	}
+	// operator: an operator or kill-switch reason. An operator pause
+	// replaces a budget or freeze pause, so that lifting the budget or the
+	// freeze never resumes an agent an operator paused; a freeze replaces
+	// a budget pause.
 	operator := !isBudgetReason(reason)
+	byOperator := strings.HasPrefix(reason, reasonOperator)
+	weaker := func(prev string) bool { return isBudgetReason(prev) || (byOperator && isFreezeReason(prev)) }
 	switch {
 	case a.State == stateRunning:
 		ok, err := s.setState(ctx, a, statePaused, reason)
@@ -206,7 +212,7 @@ func (s *server) pauseLocked(ctx context.Context, fx *lifeFx, actorID string, a 
 		}
 		fx.ctl(a, "pause", reason)
 		s.event(fx, a, fmt.Sprintf("agent %s paused: %s", a.ID, reason))
-	case a.State == statePaused && operator && isBudgetReason(a.PausedReason):
+	case a.State == statePaused && operator && weaker(a.PausedReason):
 		was := a.PausedReason
 		ok, err := s.setState(ctx, a, statePaused, reason)
 		if err != nil || !ok {
@@ -214,7 +220,7 @@ func (s *server) pauseLocked(ctx context.Context, fx *lifeFx, actorID string, a 
 		}
 		fx.ctl(a, "pause", reason)
 		s.event(fx, a, fmt.Sprintf("agent %s paused: %s (was %s)", a.ID, reason, was))
-	case a.State == stateStopped && operator && (a.PausedReason == "" || isBudgetReason(a.PausedReason)):
+	case a.State == stateStopped && operator && (a.PausedReason == "" || weaker(a.PausedReason)):
 		if ok, err := s.setState(ctx, a, stateStopped, reason); err != nil || !ok {
 			return err
 		}
@@ -234,6 +240,10 @@ func (s *server) resumeLocked(ctx context.Context, fx *lifeFx, actorID string, a
 			return connect.NewError(connect.CodeFailedPrecondition, errors.New("agent stopped"))
 		}
 		return nil
+	}
+	if block := s.freezeBlock(a); block != "" {
+		s.audit(ctx, actorID, string(policy.ActionAgentResume), a.ID, outcomeError, map[string]any{"reason": block})
+		return errFrozen(block)
 	}
 	block, err := s.budgetBlock(ctx, a)
 	if err != nil {
@@ -268,6 +278,9 @@ func (s *server) autoResumeLocked(ctx context.Context, fx *lifeFx, actorID strin
 	if a.PausedReason != reason || a.RevokedAt != "" {
 		return nil
 	}
+	if s.freezeBlock(a) != "" {
+		return nil // a freeze keeps it paused; unfreezing re-evaluates
+	}
 	block, err := s.budgetBlock(ctx, a)
 	if err != nil {
 		return s.internalError("budget check", err)
@@ -288,6 +301,9 @@ func (s *server) autoResumeLocked(ctx context.Context, fx *lifeFx, actorID strin
 func (s *server) enforceLocked(ctx context.Context, fx *lifeFx, actorID string, a *agentRow) error {
 	if a.State != stateRunning {
 		return nil
+	}
+	if block := s.freezeBlock(a); block != "" {
+		return s.pauseLocked(ctx, fx, actorID, a, block)
 	}
 	block, err := s.budgetBlock(ctx, a)
 	if err != nil {

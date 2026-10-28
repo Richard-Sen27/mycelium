@@ -67,6 +67,12 @@ type server struct {
 	// allowFake offers the CI-only fake profile (Options.AllowFakeProfile).
 	allowFake bool
 	jobs      *jobState
+
+	// Phase 5: grants, freezes and the approvals page.
+	grants *grantState
+	freeze *freezeState
+	syncs  *syncState
+	ui     *uiState
 }
 
 func runHub(ctx context.Context, opts Options, ready chan<- Ready) (err error) {
@@ -116,6 +122,14 @@ func runHub(ctx context.Context, opts Options, ready chan<- Ready) (err error) {
 	if err != nil {
 		return err
 	}
+	rules, err := cfg.GrantRules()
+	if err != nil {
+		return err
+	}
+	gcfg, err := cfg.grantConfig()
+	if err != nil {
+		return err
+	}
 	st, err := openStore(filepath.Join(dir, dbFile))
 	if err != nil {
 		return err
@@ -135,6 +149,7 @@ func runHub(ctx context.Context, opts Options, ready chan<- Ready) (err error) {
 		ctlq:       newCtlQueues(),
 		lifeLimit:  newRateLimiter(lifeReportsPerMinute, lifeReportsBurst),
 		dir:        dir, allowFake: opts.AllowFakeProfile, jobs: newJobState(newJobConfig),
+		grants: newGrantState(gcfg, rules), freeze: newFreezeState(), syncs: newSyncState(), ui: newUIState(),
 	}
 	defer s.ch.shutdown()
 	// Startup steps run to completion even if ctx is already cancelled.
@@ -147,6 +162,9 @@ func runHub(ctx context.Context, opts Options, ready chan<- Ready) (err error) {
 		return err
 	}
 	if err := syncProfiles(startCtx, st, opts.AllowFakeProfile, log); err != nil {
+		return err
+	}
+	if err := s.loadFreezes(startCtx); err != nil {
 		return err
 	}
 	s.sweepUploads()
@@ -197,6 +215,7 @@ func runHub(ctx context.Context, opts Options, ready chan<- Ready) (err error) {
 	if err := s.startScheduler(startCtx); err != nil {
 		return err
 	}
+	s.startGrantLoop(startCtx)
 	defer func() {
 		// Wake long polls and let agent RPCs and in-flight node messages
 		// finish before the bus and store close.
@@ -292,6 +311,9 @@ func (s *server) mux() http.Handler {
 	jobPath, jobHandler := mycelv1connect.NewJobServiceHandler(&jobService{s}, opts...)
 	mux.Handle(jobPath, logStreamDeadlines(jobHandler))
 	mux.Handle(mycelv1connect.NewArtifactServiceHandler(&artifactService{s}, opts...))
+	mux.Handle(mycelv1connect.NewGrantServiceHandler(&grantService{s}, opts...))
+	mux.Handle(mycelv1connect.NewControlServiceHandler(&controlService{s}, opts...))
+	s.uiRoutes(mux)
 	mux.HandleFunc("PUT /api/artifacts", s.handleArtifactPut)
 	mux.HandleFunc("GET /api/artifacts/{id}", s.handleArtifactGet)
 	mux.HandleFunc("GET /ca.pem", func(w http.ResponseWriter, _ *http.Request) {

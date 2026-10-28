@@ -147,11 +147,15 @@ func openStore(path string) (*store, error) {
 	// One connection serialises all access. The hub's write rate is tiny and
 	// this rules out SQLITE_BUSY on transaction upgrades.
 	db.SetMaxOpenConns(1)
-	if _, err := db.Exec(schema + channelSchema + lifecycleSchema + jobSchema); err != nil {
+	if _, err := db.Exec(schema + channelSchema + lifecycleSchema + jobSchema + grantSchema); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("hub: apply schema: %w", err)
 	}
 	if err := migrateAgents(context.Background(), db); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	if err := migrateMembers(context.Background(), db); err != nil {
 		_ = db.Close()
 		return nil, err
 	}

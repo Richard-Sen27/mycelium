@@ -112,7 +112,14 @@ type memberRow struct {
 	Role      string
 	JoinedAt  string
 	JoinedSeq uint64
+	// AddedBy records who made the membership (phase 5): a user id, the
+	// spawner agent id, "hub", or addedBySelf for a self-join; "" for
+	// memberships older than the column.
+	AddedBy string
 }
+
+// addedBySelf marks a membership the member made itself (an agent joining).
+const addedBySelf = "self"
 
 const channelCols = `name, type, owner_id, creator, policy, created_at, archived_at, last_seq`
 
@@ -216,13 +223,18 @@ func (s *store) hubEventInThread(ctx context.Context, channel, thread string) (b
 	return n > 0, err
 }
 
-func addMemberTx(ctx context.Context, tx *sql.Tx, channel, member, role string) error {
+// addMemberTx adds a member or changes an existing member's role. A
+// membership someone else adds replaces a self-join's origin; a self-join
+// never replaces another origin.
+func addMemberTx(ctx context.Context, tx *sql.Tx, channel, member, role, addedBy string) error {
 	seq, err := maxSeqTx(ctx, tx)
 	if err != nil {
 		return err
 	}
-	_, err = tx.ExecContext(ctx, `INSERT INTO channel_members(channel, member, role, joined_at, joined_seq) VALUES(?,?,?,?,?)
-		ON CONFLICT(channel, member) DO UPDATE SET role = excluded.role`, channel, member, role, nowString(), seq)
+	_, err = tx.ExecContext(ctx, `INSERT INTO channel_members(channel, member, role, joined_at, joined_seq, added_by) VALUES(?,?,?,?,?,?)
+		ON CONFLICT(channel, member) DO UPDATE SET role = excluded.role,
+		added_by = CASE WHEN excluded.added_by = 'self' THEN channel_members.added_by ELSE excluded.added_by END`,
+		channel, member, role, nowString(), seq, addedBy)
 	return err
 }
 
@@ -234,7 +246,7 @@ func (s *store) createChannel(ctx context.Context, c *channelRow, members []memb
 			return err
 		}
 		for _, m := range members {
-			if err := addMemberTx(ctx, tx, c.Name, m.Member, m.Role); err != nil {
+			if err := addMemberTx(ctx, tx, c.Name, m.Member, m.Role, m.AddedBy); err != nil {
 				return err
 			}
 		}
@@ -253,7 +265,7 @@ func (s *store) ensureChannel(ctx context.Context, c *channelRow, members []memb
 			return err
 		}
 		for _, m := range members {
-			if err := addMemberTx(ctx, tx, c.Name, m.Member, m.Role); err != nil {
+			if err := addMemberTx(ctx, tx, c.Name, m.Member, m.Role, m.AddedBy); err != nil {
 				return err
 			}
 		}
@@ -315,13 +327,13 @@ func (s *store) archiveChannel(ctx context.Context, name string) error {
 
 func scanMember(sc interface{ Scan(...any) error }) (*memberRow, error) {
 	var m memberRow
-	if err := sc.Scan(&m.Channel, &m.Member, &m.Role, &m.JoinedAt, &m.JoinedSeq); err != nil {
+	if err := sc.Scan(&m.Channel, &m.Member, &m.Role, &m.JoinedAt, &m.JoinedSeq, &m.AddedBy); err != nil {
 		return nil, err
 	}
 	return &m, nil
 }
 
-const memberCols = `channel, member, role, joined_at, joined_seq`
+const memberCols = `channel, member, role, joined_at, joined_seq, added_by`
 
 func (s *store) channelMembers(ctx context.Context, channel string) ([]*memberRow, error) {
 	return s.queryMembers(ctx, `SELECT `+memberCols+` FROM channel_members WHERE channel = ? ORDER BY joined_at, member`, channel)
@@ -358,8 +370,8 @@ func (s *store) getMember(ctx context.Context, channel, member string) (*memberR
 }
 
 // addMember adds a member, or changes the role of an existing one.
-func (s *store) addMember(ctx context.Context, channel, member, role string) error {
-	return s.inTx(ctx, func(tx *sql.Tx) error { return addMemberTx(ctx, tx, channel, member, role) })
+func (s *store) addMember(ctx context.Context, channel, member, role, addedBy string) error {
+	return s.inTx(ctx, func(tx *sql.Tx) error { return addMemberTx(ctx, tx, channel, member, role, addedBy) })
 }
 
 // removeMember drops a member and its subscription; errNotFound if absent.

@@ -108,6 +108,26 @@ func (s *server) handleRPC(msg *nats.Msg) {
 			s.reply(msg, nil, connect.NewError(connect.CodeUnavailable, errors.New("hub busy or stopping; retry")))
 		}
 		return
+	case bus.RPCGrantRevoked, bus.RPCBrokerUsage, bus.RPCNodeSharing:
+		// Grant, broker and sharing reports share the node's report rate
+		// limit and RPC slots.
+		done, err := s.lifeReport(node)
+		if err != nil {
+			s.reply(msg, nil, err)
+			return
+		}
+		data := msg.Data
+		if !s.ch.goWork(func(func()) {
+			defer done()
+			ctx, cancel := context.WithTimeout(context.Background(), rpcTimeout)
+			defer cancel()
+			resp, err := s.serveGrantRPC(ctx, node, method, data)
+			s.reply(msg, resp, err)
+		}) {
+			done()
+			s.reply(msg, nil, connect.NewError(connect.CodeUnavailable, errors.New("hub busy or stopping; retry")))
+		}
+		return
 	case bus.RPCAgentUsage, bus.RPCAgentExited:
 		// Lifecycle reports take the lifecycle lock, so they leave the
 		// serial subscription callback; they are rate limited per node and
@@ -330,7 +350,11 @@ func (s *server) registerLocked(ctx context.Context, fx *lifeFx, node, ownerID, 
 		// The worker can read its home channel at once (first registration
 		// only: a worker removed from it later is not re-added).
 		if _, err := s.st.getMember(ctx, home, agentID); errors.Is(err, errNotFound) {
-			if err := s.st.addMember(ctx, home, agentID, memberAgent); err != nil {
+			spawner := a.Parent
+			if spawner == "" {
+				spawner = ownerID
+			}
+			if err := s.st.addMember(ctx, home, agentID, memberAgent, spawner); err != nil {
 				return s.internalError("add member", err)
 			}
 			s.audit(ctx, actor, "channel.join", "channel:"+home, outcomeOK, map[string]any{"member": agentID, "via": "home channel"})

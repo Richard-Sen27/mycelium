@@ -304,6 +304,12 @@ func (n *nodeService) RemoveNode(ctx context.Context, req *connect.Request[mycel
 	for _, id := range failedJobs {
 		s.jobFinished(ctx, u.ID, id)
 	}
+	// Grants on the node end with it; a re-enrolled name inherits nothing.
+	s.endGrantsWhere(ctx, grantFilter{node: name}, u.ID, "node removed", false)
+	if err := s.st.deleteNodeSharing(ctx, name); err != nil {
+		s.log.Warn("delete node sharing", "node", name, "err", err)
+	}
+	s.forgetSync(name)
 	s.audit(ctx, u.ID, string(policy.ActionNodeRemove), "node:"+name, outcomeOK,
 		map[string]any{"owner_id": row.OwnerID, "connections_dropped": dropped})
 	s.alert(ctx, name, "node %s removed by %s", name, u.ID)
@@ -546,6 +552,7 @@ func (as *agentService) RevokeAgent(ctx context.Context, req *connect.Request[my
 	if err != nil {
 		return nil, s.internalError("revoke agent", err)
 	}
+	s.endGrantsWhere(ctx, grantFilter{subject: id}, u.ID, "agent revoked", true)
 	res := id
 	if !strings.HasPrefix(res, "agent:") {
 		res = "agent:" + res

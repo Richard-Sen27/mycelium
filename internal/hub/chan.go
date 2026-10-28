@@ -442,6 +442,9 @@ func (s *server) checkChannel(ctx context.Context, a actor, action policy.Action
 	if a.origin == originHub {
 		return true, policy.Decision{Allow: true}, nil
 	}
+	if a.origin == originAgent && ch.Name == channels.Approvals {
+		return false, policy.Decision{Reason: "agents may not read " + channels.Approvals}, nil
+	}
 	member, _, err := s.membership(ctx, ch, a.id)
 	if err != nil {
 		return false, policy.Decision{}, s.internalError("membership", err)
@@ -668,8 +671,8 @@ func validatePost(req *mycelv1.PostRequest) error {
 		if !validMessageType(t) {
 			return invalidArg("unknown message type %d", t)
 		}
-		if t == mycelv1.MessageType_MESSAGE_TYPE_APPROVAL_DECISION {
-			return connect.NewError(connect.CodePermissionDenied, errors.New("approval decisions are issued by the hub"))
+		if t == mycelv1.MessageType_MESSAGE_TYPE_APPROVAL_DECISION || t == mycelv1.MessageType_MESSAGE_TYPE_APPROVAL_REQUEST {
+			return connect.NewError(connect.CodePermissionDenied, errors.New("approval requests and decisions are issued by the hub"))
 		}
 	}
 	if th := req.GetThread(); th != "" && !channels.ValidThreadID(th) {
@@ -765,7 +768,7 @@ func (s *server) resolvePostChannel(ctx context.Context, a actor, name string) (
 			Policy: &mycelv1.ChannelPolicy{}, CreatedAt: nowString(),
 		},
 		pending: true,
-		members: []memberRow{{Member: a.id, Role: roleFor(a.id)}, {Member: tgt, Role: roleFor(tgt)}},
+		members: []memberRow{{Member: a.id, Role: roleFor(a.id), AddedBy: addedBySelf}, {Member: tgt, Role: roleFor(tgt), AddedBy: a.auditID()}},
 	}, nil
 }
 
@@ -803,6 +806,10 @@ func (s *server) post(ctx context.Context, a actor, req *mycelv1.PostRequest) (*
 	ch := t.ch
 	if ch.ArchivedAt != "" {
 		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("channel is archived"))
+	}
+	if err := s.postFrozen(a, ch.Name); err != nil {
+		s.auditDenied(ctx, a.auditID(), string(policy.ActionChannelPost), "channel:"+ch.Name, map[string]any{"reason": err.Error()})
+		return nil, err
 	}
 	pol := channels.WithDefaults(ch.Policy, ch.Type)
 	if t.pending {
@@ -1071,12 +1078,13 @@ func (s *server) hopLimitEvent(ctx context.Context, ch *channelRow, thread strin
 		fmt.Sprintf("hop limit (%d) reached in thread %s; further replies in this chain are refused", maxHops, thread), maxHops)
 }
 
-// ensureSystemChannels creates #general (open topic) and #alerts (system)
-// if they are missing. ownerID is an admin.
+// ensureSystemChannels creates #general (open topic), #alerts and
+// #approvals (system) if they are missing. ownerID is an admin.
 func ensureSystemChannels(ctx context.Context, st *store, ownerID string) error {
 	for _, c := range []*channelRow{
 		{Name: channels.General, Type: mycelv1.ChannelType_CHANNEL_TYPE_TOPIC, Policy: &mycelv1.ChannelPolicy{OpenToMembers: true}},
 		{Name: channels.Alerts, Type: mycelv1.ChannelType_CHANNEL_TYPE_SYSTEM, Policy: &mycelv1.ChannelPolicy{OpenToMembers: true}},
+		{Name: channels.Approvals, Type: mycelv1.ChannelType_CHANNEL_TYPE_SYSTEM, Policy: &mycelv1.ChannelPolicy{OpenToMembers: true}},
 	} {
 		c.OwnerID, c.Creator, c.CreatedAt = ownerID, hubActor.id, nowString()
 		if _, err := st.ensureChannel(ctx, c, nil); err != nil {
@@ -1151,7 +1159,7 @@ func (s *server) inboxOnce(ctx context.Context, agent string, after uint64, limi
 			return nil, after, err
 		}
 		for _, m := range batch {
-			if channels.Matches(subs[m.GetChannel()], m, agent) {
+			if m.GetChannel() != channels.Approvals && channels.Matches(subs[m.GetChannel()], m, agent) {
 				out = append(out, m)
 				if len(out) == limit {
 					return out, m.GetSeq(), nil

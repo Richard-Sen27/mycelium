@@ -679,13 +679,10 @@ func TestHubEndToEnd(t *testing.T) {
 	if err != nil || !slices.Equal(sc.Msg.GetNode().GetCapsEnabled().GetNames(), []string{"docker"}) {
 		t.Fatalf("SetNodeCaps: %v", err)
 	}
-	select {
-	case c := <-alphaNode.ctl:
-		if !slices.Equal(c.GetSetCaps().GetCapsEnabled().GetNames(), []string{"docker"}) {
-			t.Fatalf("ctl: %+v", c)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("no SetCaps ctl")
+	// Skip the freeze state a node gets after each full heartbeat.
+	c := waitCtlMatch(t, alphaNode, "SetCaps", func(r *mycelv1.CtlRequest) bool { return r.GetSetCaps() != nil })
+	if !slices.Equal(c.GetSetCaps().GetCapsEnabled().GetNames(), []string{"docker"}) {
+		t.Fatalf("ctl: %+v", c)
 	}
 
 	// Renew with a live cert: new serial, later NotAfter (the sleep above

@@ -32,7 +32,20 @@ type ctlItem struct {
 	// goroutine; it is not called when the hub stops meanwhile.
 	done    func(*mycelv1.CtlResponse, error)
 	timeout time.Duration
+	// priority puts the item at the head of the queue, after other
+	// priority items (the freeze state of a node that reconnected).
+	priority bool
+	// critical items are never dropped by the queue cap (Freeze,
+	// Unfreeze, DetachGrant).
+	critical bool
+	// dedupe, when set, replaces a queued item with the same key in place
+	// instead of queueing a second one (AttachGrant per grant, the freeze
+	// state).
+	dedupe string
 }
+
+// ctlKeyFreeze is the dedupe key of Freeze and Unfreeze for scope "all".
+const ctlKeyFreeze = "freeze:all"
 
 type ctlQueues struct {
 	mu      sync.Mutex
@@ -50,14 +63,35 @@ func (s *server) enqueueCtl(node string, it ctlItem) {
 	cq := s.ctlq
 	cq.mu.Lock()
 	defer cq.mu.Unlock()
-	if len(cq.q[node]) >= maxCtlQueue {
+	queue := cq.q[node]
+	if it.dedupe != "" {
+		for i := range queue {
+			if queue[i].dedupe == it.dedupe {
+				if old := queue[i].done; old != nil {
+					go old(nil, errCtlDropped)
+				}
+				queue[i] = it
+				return
+			}
+		}
+	}
+	if len(queue) >= maxCtlQueue && !it.critical {
 		s.log.Warn("ctl queue full; control message dropped", "node", node)
 		if it.done != nil {
 			go it.done(nil, errCtlDropped)
 		}
 		return
 	}
-	cq.q[node] = append(cq.q[node], it)
+	if it.priority {
+		at := 0
+		for at < len(queue) && queue[at].priority {
+			at++
+		}
+		queue = append(queue[:at], append([]ctlItem{it}, queue[at:]...)...)
+	} else {
+		queue = append(queue, it)
+	}
+	cq.q[node] = queue
 	if cq.running[node] {
 		return
 	}
