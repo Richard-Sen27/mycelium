@@ -12,4 +12,17 @@
 // does not offer (ceiling) refuses Attach. On macOS there is no device
 // passthrough, so the broker reports Available false with that reason and
 // GPU work goes through the ollama broker.
+//
+// Implementation notes (v1):
+//   - Detach kills the compute processes left on the device except the
+//     daemon's own process tree. For a sandboxed subject the daemon's Detach
+//     destroys the sandbox, which kills its processes; the broker kill is the
+//     safety net for trusted-host subjects. When a time-sliced lease is
+//     released while a neighbour still uses the device, nothing is killed,
+//     because the neighbours' processes cannot be told apart. A failed
+//     process listing is audited and returned as Detach's error.
+//   - MIG slices are queried with nvidia-smi --id=<MIG UUID>; whether every
+//     driver accepts a MIG UUID there is unverified on hardware.
+//   - Freeze refuses new leases; existing leases stay until detached. The
+//     daemon pauses or detaches the subjects that hold them.
 package gpu
