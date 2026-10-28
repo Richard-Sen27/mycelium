@@ -4,6 +4,7 @@ package mycel.v1;
 
 import "mycel/v1/common.proto";
 import "mycel/v1/envelope.proto";
+import "mycel/v1/job.proto";
 
 message Gpu {
   int32 index = 1;
@@ -71,6 +72,8 @@ message CtlRequest {
     SetCaps set_caps = 3;
     Shutdown shutdown = 4;
     AgentCtl agent = 5; // phase 3: pause, resume or stop one local agent
+    CreateSandbox create_sandbox = 6; // phase 4: run a job
+    KillSandbox kill_sandbox = 7; // phase 4: cancel a job
   }
 }
 

@@ -85,6 +85,20 @@ const (
 	ActionAgentStop         = Action("agent.stop")
 	ActionChannelUsageGet   = Action("channel.usage.get")
 	ActionChannelUsageReset = Action("channel.usage.reset")
+
+	// Phase 4: jobs, artifacts and profiles. Resource.Kind "job" (owner =
+	// the job's owner user), "artifact" (owner), "profile" (no owner).
+	ActionJobRun         = Action("job.run")
+	ActionJobGet         = Action("job.get")
+	ActionJobList        = Action("job.list")
+	ActionJobCancel      = Action("job.cancel")
+	ActionJobLogs        = Action("job.logs")
+	ActionArtifactList   = Action("artifact.list")
+	ActionArtifactGet    = Action("artifact.get")
+	ActionArtifactPut    = Action("artifact.put")
+	ActionArtifactDelete = Action("artifact.delete")
+	ActionProfileList    = Action("profile.list")
+	ActionProfileSet     = Action("profile.set")
 )
 
 // Resource is what the action targets. Kind is "token", "node", "user",
@@ -129,6 +143,12 @@ type Policy interface {
 //     budget of, pause, resume and stop agents they own, and get or reset
 //     usage of channels they own; agents nothing (spawning and stopping
 //     one's own workers happens on the node, not through this interface);
+//   - jobs and artifacts (phase 4): admins everything; members and their
+//     agents may run jobs (the submitter's owner becomes the job owner),
+//     get, cancel and read logs of jobs they own, list their own jobs, put
+//     artifacts, and get or delete artifacts they own or that are attached
+//     to a channel they may read (Principal.Member); profiles are listed by
+//     everyone and set by admins only;
 //   - anything else is denied.
 func Default() Policy { return defaultPolicy{} }
 

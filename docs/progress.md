@@ -53,7 +53,23 @@ Open issues: none.
 
 ## Phase 4 — Sandboxes and jobs
 
-Status: todo
+Status: contracts merged (D021); implementation starts when phase 3 acceptance passes
+
+| Package | Owns | Status | Notes |
+| --- | --- | --- | --- |
+| P4-sandbox-core | `internal/sandbox` (Select, limits, mounts, runner), `internal/sandbox/fake`, `profiles/` loader | todo | round 1 |
+| P4-egress | `internal/broker/egress` | todo | round 1 |
+| P4-jobs-hub | `internal/hub`, `internal/policy` (profiles, JobService, ArtifactService, scheduler, logs, node RPCs, agent RPCs) | todo | round 1 |
+| P4-mcp-cli | `internal/adapters/mcp`, `internal/cli` (run_job, artifacts tools; job/artifacts/profiles commands) | todo | round 1 |
+| P4-daemon-jobs | `internal/daemon` (CreateSandbox/KillSandbox, runner integration, egress proxy, artifact transfer, local artifact endpoints) | todo | round 2 |
+| P4-applevf | `internal/sandbox/applevf` (Lima first, Apple `container` when present) | todo | round 2; testable on this Mac |
+| P4-wsl2 | `internal/sandbox/wsl2` | todo | round 2; untested here |
+| P4-gvisor | `internal/sandbox/gvisor` (+ firecracker stub) | todo | round 2; untested here |
+| P4-e2e | `test/**` | todo | round 3; fake backend in CI, real backend isolation tests behind an env flag |
+
+Acceptance (from spec): `mycel job run --profile dev -- <cmd>` started on a Mac runs on a Windows node and the other way round; tests assert a job cannot read the host's home directory, cannot reach a domain outside the allowlist, and cannot see host processes.
+
+Open issues: the cross-platform acceptance needs a second machine; CI runners for real backends are not set up.
 
 ## Phase 5 — Brokers, grants and approvals
 

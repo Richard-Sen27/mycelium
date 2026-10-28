@@ -66,6 +66,9 @@ type Options struct {
 	APIListen string
 	BusListen string
 	Logger    *slog.Logger
+	// AllowFakeProfile loads the CI-only "fake" sandbox profile (phase 4).
+	// Never set outside tests; the CLI exposes it as --allow-fake-profile.
+	AllowFakeProfile bool
 }
 
 // Ready describes the running hub's bound addresses.

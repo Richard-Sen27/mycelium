@@ -64,6 +64,17 @@ package daemon
 //	GET    /api/local/workers -> {"workers":[{"agent_id","parent","harness","state","pid","started_at","exited_at","exit_code","usage":{"tokens","usd","turns"}}]}
 //	DELETE /api/local/workers/{agent}  -> 204 (stops it); only the spawning session or the local UI token
 //
+// Phase 4: artifacts for trusted-host agents. Job RPCs (agent.job.*,
+// agent.artifact.list) are proxied like every other agent RPC.
+//
+//	POST   /api/local/agents/{session}/artifacts?name=<name>[&channel=<name>]
+//	       body = bytes (≤ 256 MiB) -> 201 Artifact JSON. The daemon uploads
+//	       to the hub with its node certificate (PUT /api/artifacts) on behalf
+//	       of the agent; the artifact's created_by is the agent id and its
+//	       owner the node owner.
+//	GET    /api/local/agents/{session}/artifacts/{id} -> bytes (hub GET with
+//	       the node certificate; the hub applies the agent's visibility).
+//
 // Every local request is logged at debug; agent tokens never appear in logs.
 
 // LocalTokenFile is the local sign-in token file name under NodeDir.

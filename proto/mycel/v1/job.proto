@@ -1,0 +1,307 @@
+syntax = "proto3";
+
+package mycel.v1;
+
+import "mycel/v1/channel.proto";
+
+// ---- Profiles (spec: "Sandbox model → Profiles") ----
+
+message Limits {
+  int32 cpus = 1; // logical CPUs; 0 = profile default
+  int64 memory_bytes = 2;
+  int64 disk_bytes = 3;
+  int32 max_processes = 4;
+  string wall_clock = 5; // Go duration
+  int64 max_tokens = 6; // model tokens via brokers (phase 5)
+}
+
+message EgressPolicy {
+  repeated string allow = 1; // host patterns: "pypi.org", "*.github.com", "api.anthropic.com:443"
+}
+
+message Mount {
+  string host_path = 1;
+  string guest_path = 2;
+  bool read_only = 3;
+}
+
+message Profile {
+  string name = 1; // default, dev, trainer, browser, trusted-host
+  int32 version = 2;
+  repeated string backends = 3; // preference order: applevf, wsl2-gvisor, gvisor, firecracker, fake
+  string image = 4; // OCI image reference or rootfs URL the backend understands
+  Limits limits = 5;
+  EgressPolicy egress = 6;
+  repeated string brokers = 7; // ollama, docker-nested, docker-host, gpu (phase 5)
+  repeated Mount mounts = 8;
+  repeated string requires_approval = 9; // "rw-mount", "gpu", "egress-outside-allowlist" (phase 5)
+  string description = 10;
+}
+
+// ---- Jobs (spec: "Job", "run_job") ----
+
+enum JobState {
+  JOB_STATE_UNSPECIFIED = 0;
+  JOB_STATE_QUEUED = 1; // accepted, no node yet or node not yet acknowledged
+  JOB_STATE_STARTING = 2; // node is creating the sandbox
+  JOB_STATE_RUNNING = 3;
+  JOB_STATE_SUCCEEDED = 4;
+  JOB_STATE_FAILED = 5; // non-zero exit or sandbox error
+  JOB_STATE_CANCELLED = 6;
+  JOB_STATE_TIMED_OUT = 7;
+}
+
+message WorkspaceSeed {
+  oneof source {
+    string artifact = 1; // art_… tarball extracted into /workspace
+    GitSource git = 2;
+  }
+}
+
+message GitSource {
+  string url = 1;
+  string ref = 2; // branch, tag or commit; default the remote HEAD
+}
+
+message JobInput {
+  string artifact = 1; // art_…
+  string path = 2; // relative to /workspace, default inputs/<artifact name>
+}
+
+// JobSpec is what a human or agent submits.
+message JobSpec {
+  string profile = 1; // profile name
+  repeated string command = 2; // argv, run inside the sandbox with cwd /workspace
+  map<string, string> env = 3; // sandbox environment; MYCEL_* keys refused
+  WorkspaceSeed workspace = 4;
+  repeated JobInput inputs = 5;
+  repeated string outputs = 6; // globs relative to /workspace, collected as artifacts on completion
+  string timeout = 7; // Go duration; capped by the profile's wall_clock
+  string channel = 8; // optional: post the result message here
+  string node = 9; // optional pin to one node name
+  string name = 10; // human label
+}
+
+message JobStats {
+  string started_at = 1;
+  string finished_at = 2;
+  int64 cpu_seconds_milli = 3;
+  int64 max_memory_bytes = 4;
+  int64 egress_bytes = 5;
+}
+
+message Job {
+  string id = 1; // job_<ULID>
+  JobSpec spec = 2;
+  JobState state = 3;
+  string owner_id = 4; // user who owns the submitter
+  string submitted_by = 5; // "user:<id>" or "agent:<name>@<node>"
+  string node = 6; // where it runs
+  string backend = 7; // backend used on the node
+  string sandbox_id = 8; // sbx:<id>
+  int32 exit_code = 9;
+  string error = 10;
+  repeated string artifacts = 11; // produced art_… ids
+  JobStats stats = 12;
+  string created_at = 13;
+  uint64 log_bytes = 14;
+}
+
+message Artifact {
+  string id = 1; // art_<ULID>
+  string name = 2;
+  int64 size = 3;
+  string sha256 = 4;
+  string media_type = 5;
+  string owner_id = 6;
+  string created_by = 7; // user or agent id
+  string job_id = 8; // when produced by a job
+  string channel = 9; // when attached to a channel
+  string created_at = 10;
+}
+
+// ---- Human API ----
+
+message RunJobRequest {
+  JobSpec spec = 1;
+}
+
+message RunJobResponse {
+  Job job = 1;
+}
+
+message GetJobRequest {
+  string id = 1;
+}
+
+message GetJobResponse {
+  Job job = 1;
+}
+
+message ListJobsRequest {
+  bool include_finished = 1;
+  int32 limit = 2; // default 50, max 500
+}
+
+message ListJobsResponse {
+  repeated Job jobs = 1;
+}
+
+message CancelJobRequest {
+  string id = 1;
+}
+
+message CancelJobResponse {
+  Job job = 1;
+}
+
+message StreamLogsRequest {
+  string id = 1;
+  uint64 from_byte = 2;
+  bool follow = 3;
+}
+
+message StreamLogsResponse {
+  bytes data = 1; // raw stdout/stderr interleaved, line-oriented
+  uint64 offset = 2; // byte offset of data[0]
+  bool eof = 3; // job finished and everything sent
+}
+
+message ListProfilesRequest {}
+
+message ListProfilesResponse {
+  repeated Profile profiles = 1;
+}
+
+message ListNodesForProfileRequest {
+  string profile = 1;
+}
+
+message ListNodesForProfileResponse {
+  repeated string nodes = 1; // online nodes that can run the profile right now
+}
+
+service JobService {
+  rpc RunJob(RunJobRequest) returns (RunJobResponse);
+  rpc GetJob(GetJobRequest) returns (GetJobResponse);
+  rpc ListJobs(ListJobsRequest) returns (ListJobsResponse);
+  rpc CancelJob(CancelJobRequest) returns (CancelJobResponse);
+  rpc StreamLogs(StreamLogsRequest) returns (stream StreamLogsResponse);
+  rpc ListProfiles(ListProfilesRequest) returns (ListProfilesResponse);
+  rpc ListNodesForProfile(ListNodesForProfileRequest) returns (ListNodesForProfileResponse);
+}
+
+message ListArtifactsRequest {
+  string job_id = 1; // optional filter
+  string channel = 2; // optional filter
+  int32 limit = 3;
+}
+
+message ListArtifactsResponse {
+  repeated Artifact artifacts = 1;
+}
+
+message GetArtifactRequest {
+  string id = 1;
+}
+
+message GetArtifactResponse {
+  Artifact artifact = 1;
+}
+
+message DeleteArtifactRequest {
+  string id = 1;
+}
+
+message DeleteArtifactResponse {}
+
+// Artifact bytes travel over plain HTTPS on the hub API server, not Connect:
+//   PUT  /api/artifacts?name=<name>[&job=<id>][&channel=<name>]  body = bytes (≤ 1 GiB)
+//        auth: API key (humans) or node certificate (nodes delivering job outputs
+//        and daemons exporting on behalf of local agents); returns Artifact JSON
+//   GET  /api/artifacts/{id}                                   -> bytes
+//        auth: API key or node certificate; same visibility rules as GetArtifact
+service ArtifactService {
+  rpc ListArtifacts(ListArtifactsRequest) returns (ListArtifactsResponse);
+  rpc GetArtifact(GetArtifactRequest) returns (GetArtifactResponse);
+  rpc DeleteArtifact(DeleteArtifactRequest) returns (DeleteArtifactResponse);
+}
+
+// ---- Agent RPCs over the bus (node.<name>.rpc.agent.job.*) ----
+
+message AgentRunJobRequest {
+  AgentCall call = 1;
+  JobSpec spec = 2;
+}
+
+message AgentGetJobRequest {
+  AgentCall call = 1;
+  string id = 2;
+}
+
+message AgentCancelJobRequest {
+  AgentCall call = 1;
+  string id = 2;
+}
+
+message AgentJobLogsRequest {
+  AgentCall call = 1;
+  string id = 2;
+  uint64 from_byte = 3;
+  int32 max_bytes = 4; // default 64 KiB, max 512 KiB
+  int32 wait_ms = 5; // long poll like inbox.pull
+}
+
+message AgentJobLogsResponse {
+  bytes data = 1;
+  uint64 next_byte = 2;
+  JobState state = 3;
+}
+
+message AgentListArtifactsRequest {
+  AgentCall call = 1;
+  ListArtifactsRequest list = 2;
+}
+
+// ---- Node RPCs (node.<name>.rpc.job.*) and control ----
+
+message JobLogChunk {
+  string job_id = 1;
+  uint64 seq = 2; // per job, starting at 1
+  bytes data = 3; // ≤ 64 KiB
+}
+
+message JobLogAck {
+  uint64 seq = 1;
+}
+
+message JobDoneRequest {
+  string job_id = 1;
+  JobState state = 2; // SUCCEEDED, FAILED, CANCELLED, TIMED_OUT
+  int32 exit_code = 3;
+  string error = 4;
+  repeated string artifacts = 5; // uploaded art_… ids
+  JobStats stats = 6;
+}
+
+message JobDoneResponse {}
+
+message JobStartedRequest {
+  string job_id = 1;
+  string sandbox_id = 2;
+  string backend = 3;
+}
+
+message JobStartedResponse {}
+
+// CreateSandbox is sent by the hub on node.<name>.ctl.
+message CreateSandbox {
+  Job job = 1;
+  Profile profile = 2; // resolved profile at submission time
+  string input_base_url = 3; // hub URL for artifact downloads (node cert auth)
+}
+
+message KillSandbox {
+  string job_id = 1;
+  string reason = 2;
+}

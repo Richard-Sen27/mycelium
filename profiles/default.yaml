@@ -1,0 +1,15 @@
+# Chat-only or reasoning agents: workspace only, no egress (spec: Profiles).
+name: default
+version: 1
+description: Workspace only, no network.
+backends: [applevf, wsl2-gvisor, gvisor, firecracker]
+image: docker.io/library/debian:bookworm-slim
+limits:
+  cpus: 2
+  memory_bytes: 4294967296
+  disk_bytes: 21474836480
+  max_processes: 512
+  wall_clock: 1h
+egress:
+  allow: []
+brokers: []

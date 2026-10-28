@@ -1,0 +1,32 @@
+# Coding agents running tests and builds: nested Docker, package registries, git, Ollama.
+name: dev
+version: 1
+description: Build and test with nested Docker and package registries.
+backends: [applevf, wsl2-gvisor, gvisor, firecracker]
+image: docker.io/library/debian:bookworm
+limits:
+  cpus: 4
+  memory_bytes: 8589934592
+  disk_bytes: 42949672960
+  max_processes: 2048
+  wall_clock: 2h
+egress:
+  allow:
+    - github.com
+    - "*.github.com"
+    - "*.githubusercontent.com"
+    - pypi.org
+    - files.pythonhosted.org
+    - registry.npmjs.org
+    - proxy.golang.org
+    - sum.golang.org
+    - storage.googleapis.com
+    - crates.io
+    - static.crates.io
+    - index.crates.io
+    - registry-1.docker.io
+    - auth.docker.io
+    - production.cloudflare.docker.com
+    - deb.debian.org
+    - security.debian.org
+brokers: [docker-nested, ollama]

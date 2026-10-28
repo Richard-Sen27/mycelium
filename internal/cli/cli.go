@@ -53,6 +53,19 @@
 //
 // A channel argument without "#", "@" or "dm:" gets a leading "#".
 //
+// Phase 4 additions:
+//
+//	mycel job run --profile <name> [--node <name>] [--channel <#name>] [--timeout 30m] [--input art_…=path]... [--output glob]... [--workspace art_…|--git url[@ref]] [--env K=V]... -- <command...>
+//	mycel job ls [--all]
+//	mycel job get <id>
+//	mycel job logs <id> [--follow]
+//	mycel job cancel <id>
+//	mycel profiles ls
+//	mycel artifacts ls [--job id] [--channel name]
+//	mycel artifacts get <id> [-o path]
+//	mycel artifacts put <path> [--name n] [--channel name]
+//	mycel artifacts rm <id>
+//
 // Global flags: --json, --hub-url, --api-key (override config.yaml), -v.
 // Environment: MYCEL_HOME (see internal/config), MYCEL_API_KEY, MYCEL_HUB_URL.
 package cli

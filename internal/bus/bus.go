@@ -90,6 +90,17 @@ const (
 	// token; the node vouches for agents it registered).
 	RPCAgentUsage  = "agent.usage"  // AgentUsageRequest -> AgentUsageResponse
 	RPCAgentExited = "agent.exited" // AgentExitedRequest -> AgentExitedResponse
+
+	// Phase 4: jobs and artifacts. Agent-scoped (token in the request):
+	RPCAgentJobRun       = "agent.job.run"       // AgentRunJobRequest -> RunJobResponse
+	RPCAgentJobGet       = "agent.job.get"       // AgentGetJobRequest -> GetJobResponse
+	RPCAgentJobCancel    = "agent.job.cancel"    // AgentCancelJobRequest -> CancelJobResponse
+	RPCAgentJobLogs      = "agent.job.logs"      // AgentJobLogsRequest -> AgentJobLogsResponse (long poll)
+	RPCAgentArtifactList = "agent.artifact.list" // AgentListArtifactsRequest -> ListArtifactsResponse
+	// Node-scoped (the node vouches; no agent token):
+	RPCJobStarted = "job.started" // JobStartedRequest -> JobStartedResponse
+	RPCJobLog     = "job.log"     // JobLogChunk -> JobLogAck
+	RPCJobDone    = "job.done"    // JobDoneRequest -> JobDoneResponse
 )
 
 // StatusHeader is set on every RPC reply from the hub: "ok" or "error". On
@@ -107,7 +118,12 @@ const (
 	StreamChannelsSubject = "ch.>"
 	StreamAudit           = "AUDIT" // subjects audit.>; JSON audit entries
 	StreamAuditSubject    = "audit.>"
+	StreamJobLogs         = "JOBLOG" // subjects job.>; raw log chunks (phase 4)
+	StreamJobLogsSubject  = "job.>"
 )
+
+// JobLogSubject is "job.<id>.log" (spec subject table); only the hub publishes.
+func JobLogSubject(jobID string) string { return "job." + jobID + ".log" }
 
 // ChannelSubject is the persisted subject for a channel's messages:
 // "ch.<name without the leading '#'>.msg". Channel names never contain '.',

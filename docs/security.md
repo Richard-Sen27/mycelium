@@ -41,3 +41,20 @@ Not covered yet:
 - Human messages from other team members carry `untrusted: false`; the adapter shows the sender so a harness can tell owners apart, but there is no consent step before another member adds your agent to a channel or messages it.
 - Audit rows for refused requests are sampled per actor; the audit table and streams are not pruned.
 
+## Phase 3
+
+Covered:
+
+- Workers run as the member's own user on their own machine only; the hub refuses a parent on another node; nobody's login is used for another member's harness.
+- A worker's only network credential is the agent token held inside the daemon; the worker process gets a local session id and the local token.
+- Spawn requests carry no environment; the daemon's environment is inherited and `MYCEL_HOME`/`MYCEL_LOCAL_ADDR` are set last. Manifest `{{env:NAME}}` placeholders are limited to `MYCEL_FAKE_*`.
+- Budgets pause rather than kill, usage never decreases, an operator pause survives exits, and a worker's home channel and parent cannot change after the first registration.
+
+Not covered yet:
+
+- A node that under-reports or never reports usage is not detected; usage is self-reported by the node that runs the harness.
+- Claude Code workers are limited to the mycel tools; Codex workers run with workspace-write and no approvals inside a git repository, so they can edit files and run commands there.
+- On Windows, workers are placed in a Job Object so stop and shutdown kill the whole tree, but this path has not run on a Windows machine yet.
+- Child processes that detach from the worker's process group escape pause, stop and kill.
+- Stop ends the current run only; a stopped worker may be registered again by its node. Revoke is the lasting removal.
+

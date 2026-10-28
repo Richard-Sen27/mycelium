@@ -1,0 +1,16 @@
+# CI only: the fake backend on the host. The hub loads it only when started with
+# --allow-fake-profile (the e2e harness does); it never ships on real nodes.
+name: fake
+version: 1
+description: CI-only fake sandbox on the host, no isolation.
+backends: [fake]
+image: none
+limits:
+  cpus: 1
+  memory_bytes: 1073741824
+  disk_bytes: 1073741824
+  max_processes: 64
+  wall_clock: 10m
+egress:
+  allow: [example.com, "*.example.org"]
+brokers: []

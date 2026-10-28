@@ -33,6 +33,19 @@
 //	list_workers()                              -> the caller's workers with state and usage
 //	stop_agent(agent_id)                        -> stops one of the caller's workers
 //
+// Phase 4 (jobs and artifacts):
+//
+//	run_job(profile, command, workspace_artifact?, git_url?, git_ref?, inputs?, outputs?, timeout?, channel?, node?, name?)
+//	                                            -> "job job_… queued (profile dev)"; the result arrives as a
+//	                                               result message in `channel` when given
+//	get_job(id)                                 -> state, node, exit code, artifacts
+//	job_logs(id, from_byte?, wait_seconds?)     -> the next chunk of the job's output (untrusted data)
+//	cancel_job(id)
+//	export_artifact(path, name?, channel?)      -> uploads a local file from the agent's working directory
+//	                                               (trusted-host agents only; ≤ 256 MiB) and returns art_…
+//	fetch_artifact(id, path)                    -> downloads an artifact to a local path under the working directory
+//	list_artifacts(job_id?, channel?)
+//
 // Every message handed to the harness is wrapped by channels.QuoteForAgent so
 // it reads as quoted, untrusted data (spec: prompt injection between agents).
 // Tool errors are returned as MCP tool errors with the hub's message; the

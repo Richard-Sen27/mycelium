@@ -518,6 +518,8 @@ type CtlRequest struct {
 	//	*CtlRequest_SetCaps
 	//	*CtlRequest_Shutdown
 	//	*CtlRequest_Agent
+	//	*CtlRequest_CreateSandbox
+	//	*CtlRequest_KillSandbox
 	Cmd           isCtlRequest_Cmd `protobuf_oneof:"cmd"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -605,6 +607,24 @@ func (x *CtlRequest) GetAgent() *AgentCtl {
 	return nil
 }
 
+func (x *CtlRequest) GetCreateSandbox() *CreateSandbox {
+	if x != nil {
+		if x, ok := x.Cmd.(*CtlRequest_CreateSandbox); ok {
+			return x.CreateSandbox
+		}
+	}
+	return nil
+}
+
+func (x *CtlRequest) GetKillSandbox() *KillSandbox {
+	if x != nil {
+		if x, ok := x.Cmd.(*CtlRequest_KillSandbox); ok {
+			return x.KillSandbox
+		}
+	}
+	return nil
+}
+
 type isCtlRequest_Cmd interface {
 	isCtlRequest_Cmd()
 }
@@ -629,6 +649,14 @@ type CtlRequest_Agent struct {
 	Agent *AgentCtl `protobuf:"bytes,5,opt,name=agent,proto3,oneof"` // phase 3: pause, resume or stop one local agent
 }
 
+type CtlRequest_CreateSandbox struct {
+	CreateSandbox *CreateSandbox `protobuf:"bytes,6,opt,name=create_sandbox,json=createSandbox,proto3,oneof"` // phase 4: run a job
+}
+
+type CtlRequest_KillSandbox struct {
+	KillSandbox *KillSandbox `protobuf:"bytes,7,opt,name=kill_sandbox,json=killSandbox,proto3,oneof"` // phase 4: cancel a job
+}
+
 func (*CtlRequest_Ping) isCtlRequest_Cmd() {}
 
 func (*CtlRequest_Revoked) isCtlRequest_Cmd() {}
@@ -638,6 +666,10 @@ func (*CtlRequest_SetCaps) isCtlRequest_Cmd() {}
 func (*CtlRequest_Shutdown) isCtlRequest_Cmd() {}
 
 func (*CtlRequest_Agent) isCtlRequest_Cmd() {}
+
+func (*CtlRequest_CreateSandbox) isCtlRequest_Cmd() {}
+
+func (*CtlRequest_KillSandbox) isCtlRequest_Cmd() {}
 
 // AgentCtl is sent by the hub when an agent is paused (budget exhausted,
 // kill switch), resumed or stopped. The node applies it to the local worker
@@ -1433,7 +1465,7 @@ var File_mycel_v1_node_proto protoreflect.FileDescriptor
 
 const file_mycel_v1_node_proto_rawDesc = "" +
 	"\n" +
-	"\x13mycel/v1/node.proto\x12\bmycel.v1\x1a\x15mycel/v1/common.proto\x1a\x17mycel/v1/envelope.proto\"\x80\x01\n" +
+	"\x13mycel/v1/node.proto\x12\bmycel.v1\x1a\x15mycel/v1/common.proto\x1a\x17mycel/v1/envelope.proto\x1a\x12mycel/v1/job.proto\"\x80\x01\n" +
 	"\x03Gpu\x12\x14\n" +
 	"\x05index\x18\x01 \x01(\x05R\x05index\x12\x16\n" +
 	"\x06vendor\x18\x02 \x01(\tR\x06vendor\x12\x14\n" +
@@ -1483,14 +1515,16 @@ const file_mycel_v1_node_proto_rawDesc = "" +
 	"\tinventory\x18\x02 \x01(\v2\x13.mycel.v1.InventoryR\tinventory\x12%\n" +
 	"\x0einventory_hash\x18\x03 \x01(\tR\rinventoryHash\x12%\n" +
 	"\x0euptime_seconds\x18\x04 \x01(\x04R\ruptimeSeconds\x12\x17\n" +
-	"\asent_at\x18\x05 \x01(\tR\x06sentAt\"\xf6\x01\n" +
+	"\asent_at\x18\x05 \x01(\tR\x06sentAt\"\xf4\x02\n" +
 	"\n" +
 	"CtlRequest\x12$\n" +
 	"\x04ping\x18\x01 \x01(\v2\x0e.mycel.v1.PingH\x00R\x04ping\x12-\n" +
 	"\arevoked\x18\x02 \x01(\v2\x11.mycel.v1.RevokedH\x00R\arevoked\x12.\n" +
 	"\bset_caps\x18\x03 \x01(\v2\x11.mycel.v1.SetCapsH\x00R\asetCaps\x120\n" +
 	"\bshutdown\x18\x04 \x01(\v2\x12.mycel.v1.ShutdownH\x00R\bshutdown\x12*\n" +
-	"\x05agent\x18\x05 \x01(\v2\x12.mycel.v1.AgentCtlH\x00R\x05agentB\x05\n" +
+	"\x05agent\x18\x05 \x01(\v2\x12.mycel.v1.AgentCtlH\x00R\x05agent\x12@\n" +
+	"\x0ecreate_sandbox\x18\x06 \x01(\v2\x17.mycel.v1.CreateSandboxH\x00R\rcreateSandbox\x12:\n" +
+	"\fkill_sandbox\x18\a \x01(\v2\x15.mycel.v1.KillSandboxH\x00R\vkillSandboxB\x05\n" +
 	"\x03cmd\"U\n" +
 	"\bAgentCtl\x12\x19\n" +
 	"\bagent_id\x18\x01 \x01(\tR\aagentId\x12\x16\n" +
@@ -1582,7 +1616,9 @@ var file_mycel_v1_node_proto_goTypes = []any{
 	(*RefreshAgentTokenRequest)(nil),  // 18: mycel.v1.RefreshAgentTokenRequest
 	(*RefreshAgentTokenResponse)(nil), // 19: mycel.v1.RefreshAgentTokenResponse
 	(*Capabilities)(nil),              // 20: mycel.v1.Capabilities
-	(*Budget)(nil),                    // 21: mycel.v1.Budget
+	(*CreateSandbox)(nil),             // 21: mycel.v1.CreateSandbox
+	(*KillSandbox)(nil),               // 22: mycel.v1.KillSandbox
+	(*Budget)(nil),                    // 23: mycel.v1.Budget
 }
 var file_mycel_v1_node_proto_depIdxs = []int32{
 	0,  // 0: mycel.v1.Inventory.gpus:type_name -> mycel.v1.Gpu
@@ -1597,15 +1633,17 @@ var file_mycel_v1_node_proto_depIdxs = []int32{
 	9,  // 9: mycel.v1.CtlRequest.set_caps:type_name -> mycel.v1.SetCaps
 	10, // 10: mycel.v1.CtlRequest.shutdown:type_name -> mycel.v1.Shutdown
 	6,  // 11: mycel.v1.CtlRequest.agent:type_name -> mycel.v1.AgentCtl
-	20, // 12: mycel.v1.SetCaps.caps_enabled:type_name -> mycel.v1.Capabilities
-	21, // 13: mycel.v1.RegisterAgentRequest.budget:type_name -> mycel.v1.Budget
-	21, // 14: mycel.v1.AgentUsageResponse.agent_remaining:type_name -> mycel.v1.Budget
-	21, // 15: mycel.v1.AgentUsageResponse.channel_remaining:type_name -> mycel.v1.Budget
-	16, // [16:16] is the sub-list for method output_type
-	16, // [16:16] is the sub-list for method input_type
-	16, // [16:16] is the sub-list for extension type_name
-	16, // [16:16] is the sub-list for extension extendee
-	0,  // [0:16] is the sub-list for field type_name
+	21, // 12: mycel.v1.CtlRequest.create_sandbox:type_name -> mycel.v1.CreateSandbox
+	22, // 13: mycel.v1.CtlRequest.kill_sandbox:type_name -> mycel.v1.KillSandbox
+	20, // 14: mycel.v1.SetCaps.caps_enabled:type_name -> mycel.v1.Capabilities
+	23, // 15: mycel.v1.RegisterAgentRequest.budget:type_name -> mycel.v1.Budget
+	23, // 16: mycel.v1.AgentUsageResponse.agent_remaining:type_name -> mycel.v1.Budget
+	23, // 17: mycel.v1.AgentUsageResponse.channel_remaining:type_name -> mycel.v1.Budget
+	18, // [18:18] is the sub-list for method output_type
+	18, // [18:18] is the sub-list for method input_type
+	18, // [18:18] is the sub-list for extension type_name
+	18, // [18:18] is the sub-list for extension extendee
+	0,  // [0:18] is the sub-list for field type_name
 }
 
 func init() { file_mycel_v1_node_proto_init() }
@@ -1615,12 +1653,15 @@ func file_mycel_v1_node_proto_init() {
 	}
 	file_mycel_v1_common_proto_init()
 	file_mycel_v1_envelope_proto_init()
+	file_mycel_v1_job_proto_init()
 	file_mycel_v1_node_proto_msgTypes[5].OneofWrappers = []any{
 		(*CtlRequest_Ping)(nil),
 		(*CtlRequest_Revoked)(nil),
 		(*CtlRequest_SetCaps)(nil),
 		(*CtlRequest_Shutdown)(nil),
 		(*CtlRequest_Agent)(nil),
+		(*CtlRequest_CreateSandbox)(nil),
+		(*CtlRequest_KillSandbox)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
