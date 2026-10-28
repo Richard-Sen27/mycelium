@@ -287,6 +287,7 @@ func (n *nodeService) RemoveNode(ctx context.Context, req *connect.Request[mycel
 	s.beats.forget(name)
 	s.audit(ctx, u.ID, string(policy.ActionNodeRemove), "node:"+name, outcomeOK,
 		map[string]any{"owner_id": row.OwnerID, "connections_dropped": dropped})
+	s.alert(ctx, name, "node %s removed by %s", name, u.ID)
 	return connect.NewResponse(&mycelv1.RemoveNodeResponse{}), nil
 }
 

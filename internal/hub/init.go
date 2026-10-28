@@ -177,6 +177,9 @@ func initHub(ctx context.Context, opts InitOptions) (res *InitResult, err error)
 	if err != nil {
 		return nil, err
 	}
+	if err = ensureSystemChannels(ctx, st, admin.ID); err != nil {
+		return nil, err
+	}
 
 	// ---- local node, signed in-process ----
 	key, keyPEM, err := identity.GenerateKey()

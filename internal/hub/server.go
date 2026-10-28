@@ -28,6 +28,10 @@ import (
 // newPolicy builds the policy of a running hub; tests may replace it.
 var newPolicy = policy.Default
 
+// testHookServer, when set by a test, receives the running server once its
+// bus connection and streams are up.
+var testHookServer func(*server)
+
 // maxRequestBytes bounds Connect request bodies.
 const maxRequestBytes = 1 << 20
 
@@ -46,6 +50,7 @@ type server struct {
 
 	enrolLimit *rateLimiter
 	beats      *beatState
+	ch         *chanState
 }
 
 func runHub(ctx context.Context, opts Options, ready chan<- Ready) (err error) {
@@ -110,6 +115,17 @@ func runHub(ctx context.Context, opts Options, ready chan<- Ready) (err error) {
 		st: st, policy: newPolicy(), log: log,
 		enrolLimit: newRateLimiter(enrolRatePerMinute, enrolBurst),
 		beats:      newBeatState(),
+		ch:         newChanState(),
+	}
+	defer s.ch.shutdown()
+	// Startup steps run to completion even if ctx is already cancelled.
+	startCtx := context.WithoutCancel(ctx)
+	adminID, err := firstAdmin(startCtx, st)
+	if err != nil {
+		return err
+	}
+	if err := ensureSystemChannels(startCtx, st, adminID); err != nil {
+		return err
 	}
 
 	// ---- bus ----
@@ -142,12 +158,24 @@ func runHub(ctx context.Context, opts Options, ready chan<- Ready) (err error) {
 		return err
 	}
 	s.nc = nc
+	sctx, scancel := context.WithTimeout(startCtx, 10*time.Second)
+	err = s.setupStreams(sctx)
+	scancel()
+	if err != nil {
+		return err
+	}
+	if testHookServer != nil {
+		testHookServer(s)
+	}
 	subs, err := s.startRegistry()
 	if err != nil {
 		return err
 	}
 	defer func() {
-		// Let in-flight node messages finish before the bus and store close.
+		// Wake long polls and let agent RPCs and in-flight node messages
+		// finish before the bus and store close.
+		s.ch.shutdown()
+		s.ch.waitWork(5 * time.Second)
 		if derr := nc.Drain(); derr != nil {
 			for _, sub := range subs {
 				_ = sub.Unsubscribe()
@@ -199,6 +227,8 @@ func runHub(ctx context.Context, opts Options, ready chan<- Ready) (err error) {
 	case err = <-serveErr:
 		err = fmt.Errorf("hub: api server: %w", err)
 	}
+	// End Watch streams and long polls so the HTTP server can shut down.
+	s.ch.shutdown()
 	sctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if serr := httpSrv.Shutdown(sctx); serr != nil && !errors.Is(serr, http.ErrServerClosed) {
@@ -231,6 +261,8 @@ func (s *server) mux() http.Handler {
 	mux.Handle(mycelv1connect.NewUserServiceHandler(&userService{s}, opts...))
 	mux.Handle(mycelv1connect.NewAgentServiceHandler(&agentService{s}, opts...))
 	mux.Handle(mycelv1connect.NewEnrolServiceHandler(&enrolService{s}, opts...))
+	chPath, chHandler := mycelv1connect.NewChannelServiceHandler(&channelService{s}, opts...)
+	mux.Handle(chPath, streamDeadlines(chHandler))
 	mux.HandleFunc("GET /ca.pem", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		_, _ = w.Write(s.caPEM)

@@ -71,8 +71,9 @@ func TestStoreAgentCap(t *testing.T) {
 	st := newTestStore(t)
 	ctx := context.Background()
 	reg := func(name string) error {
-		return st.upsertAgent(ctx, &agentRow{ID: "agent:" + name + "@n", Name: name, NodeName: "n", OwnerID: "usr_x",
+		_, err := st.upsertAgent(ctx, &agentRow{ID: "agent:" + name + "@n", Name: name, NodeName: "n", OwnerID: "usr_x",
 			State: "running", CreatedAt: nowString()})
+		return err
 	}
 	for i := range maxAgentsPerNode {
 		if err := reg(fmt.Sprintf("a%d", i)); err != nil {

@@ -123,6 +123,7 @@ func (e *enrolService) Enrol(ctx context.Context, req *connect.Request[mycelv1.E
 	}
 	s.audit(ctx, "node:"+row.NodeName, "enrol", "node:"+row.NodeName, outcomeOK,
 		map[string]any{"token_id": row.ID, "owner_id": row.OwnerID, "caps": row.Caps, "serial": serial})
+	s.alert(ctx, row.NodeName, "node %s enrolled (owner %s)", row.NodeName, row.OwnerID)
 	return connect.NewResponse(&mycelv1.EnrolResponse{
 		NodeId: "node:" + row.NodeName, SpiffeId: spiffeID, CertPem: certPEM, CaPem: s.caPEM,
 		BusUrl: s.cfg.BusAdvertise, HubUrl: s.cfg.AdvertiseURL,

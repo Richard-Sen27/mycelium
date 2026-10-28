@@ -37,6 +37,9 @@ func TestNodesAgentsAndRolelessDenied(t *testing.T) {
 	pol := Default()
 	for _, p := range []Principal{node, agent, nodeAdmin, noRole, {}} {
 		for _, a := range allActions {
+			if p.Kind == KindAgent && a == ActionAgentList {
+				continue // phase 2: agents discover other agents (TestChannelRules)
+			}
 			r := Resource{Kind: "node", ID: "box", OwnerID: p.OwnerID}
 			if d := pol.Authorize(context.Background(), p, a, r); d.Allow {
 				t.Errorf("%+v allowed %s", p, a)

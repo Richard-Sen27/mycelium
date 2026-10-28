@@ -116,6 +116,7 @@ func (s *server) audit(ctx context.Context, actor, action, resource, outcome str
 	if err := s.st.appendAudit(ctx, actor, action, resource, outcome, details); err != nil {
 		s.log.Error("audit write failed", "err", err, "action", action)
 	}
+	s.publishAudit(actor, action, resource, outcome, details)
 	attrs := []any{"actor", actor, "action", action, "resource", resource, "outcome", outcome}
 	for k, v := range details {
 		attrs = append(attrs, k, v)

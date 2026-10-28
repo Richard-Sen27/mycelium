@@ -6,7 +6,11 @@
 // fixed. The hub work package implements Default.
 package policy
 
-import "context"
+import (
+	"context"
+
+	"github.com/richard-sen27/mycelium/internal/channels"
+)
 
 // Kind of principal.
 type Kind string
@@ -103,10 +107,14 @@ type Policy interface {
 //     Principal.Member; Resource carries the channel name and owner. Users:
 //     create channels (they become the owner); list; get, post, read and use
 //     the blackboard on channels they are a member of (admins: all); update
-//     policy, add and remove members and archive channels they own. Agents:
-//     post, read and use the blackboard on channels they are a member of;
-//     create task channels (name prefix "#task-"); add members to task
-//     channels they created (Principal.Creator true);
+//     policy, add and remove members and archive channels they own (a
+//     channel without an owner, such as a direct channel, only admins).
+//     Agents: list agents and channels (the caller filters to what the agent
+//     may read); get, post, read and use the blackboard on channels they are
+//     a member of (for joining, the caller passes Member true when the
+//     channel is open to members); create task channels (name prefix
+//     "#task-"); add members to task channels they created
+//     (Principal.Creator true);
 //   - anything else is denied.
 func Default() Policy { return defaultPolicy{} }
 
@@ -127,6 +135,42 @@ var knownActions = map[Action]bool{
 	ActionAPIKeyCreate: true,
 	ActionAgentList:    true,
 	ActionAgentRevoke:  true,
+
+	ActionChannelCreate:       true,
+	ActionChannelList:         true,
+	ActionChannelGet:          true,
+	ActionChannelPolicyUpdate: true,
+	ActionChannelMemberAdd:    true,
+	ActionChannelMemberRemove: true,
+	ActionChannelArchive:      true,
+	ActionChannelPost:         true,
+	ActionChannelRead:         true,
+	ActionBlackboardRead:      true,
+	ActionBlackboardWrite:     true,
+}
+
+// channelActions are the phase 2 actions agents may be considered for.
+var channelActions = map[Action]bool{
+	ActionChannelCreate:       true,
+	ActionChannelList:         true,
+	ActionChannelGet:          true,
+	ActionChannelPolicyUpdate: true,
+	ActionChannelMemberAdd:    true,
+	ActionChannelMemberRemove: true,
+	ActionChannelArchive:      true,
+	ActionChannelPost:         true,
+	ActionChannelRead:         true,
+	ActionBlackboardRead:      true,
+	ActionBlackboardWrite:     true,
+}
+
+// memberChannelActions are allowed to members of the channel.
+var memberChannelActions = map[Action]bool{
+	ActionChannelGet:      true,
+	ActionChannelPost:     true,
+	ActionChannelRead:     true,
+	ActionBlackboardRead:  true,
+	ActionBlackboardWrite: true,
 }
 
 type defaultPolicy struct{}
@@ -139,6 +183,9 @@ func deny(reason string) Decision { return Decision{Allow: false, Reason: reason
 func (defaultPolicy) Authorize(_ context.Context, p Principal, a Action, r Resource) Decision {
 	if !knownActions[a] {
 		return deny("unknown action")
+	}
+	if p.Kind == KindAgent && p.ID != "" && (channelActions[a] || a == ActionAgentList) {
+		return authorizeAgentChannel(p, a, r)
 	}
 	if p.Kind != KindUser || p.ID == "" {
 		return deny("only users may perform this action")
@@ -165,7 +212,46 @@ func (defaultPolicy) Authorize(_ context.Context, p Principal, a Action, r Resou
 			return allow()
 		}
 		return deny("members may only create API keys for themselves")
+	case ActionChannelCreate, ActionChannelList:
+		return allow()
+	case ActionChannelGet, ActionChannelPost, ActionChannelRead, ActionBlackboardRead, ActionBlackboardWrite:
+		if p.Member {
+			return allow()
+		}
+		return deny("not a member of this channel")
+	case ActionChannelPolicyUpdate, ActionChannelMemberAdd, ActionChannelMemberRemove, ActionChannelArchive:
+		if owns {
+			return allow()
+		}
+		return deny("only the channel owner or an admin may do this")
 	default:
 		return deny("admin role required")
 	}
 }
+
+// authorizeAgentChannel applies the channel rules to an agent principal.
+func authorizeAgentChannel(p Principal, a Action, r Resource) Decision {
+	switch {
+	case a == ActionChannelList, a == ActionAgentList:
+		return allow()
+	case memberChannelActions[a]:
+		if p.Member {
+			return allow()
+		}
+		return deny("agent is not a member of this channel")
+	case a == ActionChannelCreate:
+		if isTaskName(r.ID) {
+			return allow()
+		}
+		return deny("agents may only create task channels (#task-...)")
+	case a == ActionChannelMemberAdd:
+		if p.Creator && isTaskName(r.ID) {
+			return allow()
+		}
+		return deny("agents may only add members to task channels they created")
+	default:
+		return deny("agents may not do this")
+	}
+}
+
+func isTaskName(name string) bool { return channels.IsTask(name) }

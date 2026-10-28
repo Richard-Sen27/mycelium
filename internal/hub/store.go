@@ -147,7 +147,7 @@ func openStore(path string) (*store, error) {
 	// One connection serialises all access. The hub's write rate is tiny and
 	// this rules out SQLITE_BUSY on transaction upgrades.
 	db.SetMaxOpenConns(1)
-	if _, err := db.Exec(schema); err != nil {
+	if _, err := db.Exec(schema + channelSchema); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("hub: apply schema: %w", err)
 	}
@@ -883,8 +883,10 @@ func (s *store) getAgent(ctx context.Context, id string) (*agentRow, error) {
 
 // upsertAgent registers an agent or re-registers an existing, unrevoked one.
 // A revoked agent id stays revoked.
-func (s *store) upsertAgent(ctx context.Context, a *agentRow) error {
-	return s.inTx(ctx, func(tx *sql.Tx) error {
+// It reports whether the agent was new.
+func (s *store) upsertAgent(ctx context.Context, a *agentRow) (bool, error) {
+	created := false
+	err := s.inTx(ctx, func(tx *sql.Tx) error {
 		var revoked sql.NullString
 		err := tx.QueryRowContext(ctx, `SELECT revoked_at FROM agents WHERE id = ?`, a.ID).Scan(&revoked)
 		switch {
@@ -899,6 +901,7 @@ func (s *store) upsertAgent(ctx context.Context, a *agentRow) error {
 			}
 			_, err = tx.ExecContext(ctx, `INSERT INTO agents(`+agentCols+`) VALUES(?,?,?,?,?,?,?,?,?,NULL)`,
 				a.ID, a.Name, a.NodeName, a.SandboxID, a.OwnerID, a.Harness, a.State, a.CreatedAt, nullable(a.TokenExpiresAt))
+			created = err == nil
 			return err
 		case err != nil:
 			return err
@@ -910,6 +913,7 @@ func (s *store) upsertAgent(ctx context.Context, a *agentRow) error {
 			a.SandboxID, a.OwnerID, a.Harness, a.State, nullable(a.TokenExpiresAt), a.ID)
 		return err
 	})
+	return created, err
 }
 
 func (s *store) setAgentTokenExpiry(ctx context.Context, id, exp string) error {
