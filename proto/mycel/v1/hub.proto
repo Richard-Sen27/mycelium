@@ -1,0 +1,159 @@
+syntax = "proto3";
+
+package mycel.v1;
+
+import "mycel/v1/common.proto";
+import "mycel/v1/identity.proto";
+import "mycel/v1/node.proto";
+
+// ---- Tokens ----
+
+message CreateJoinTokenRequest {
+  string node_name = 1;
+  Capabilities caps = 2;
+  string ttl = 3; // Go duration, e.g. "15m"; default 15m, max 24h
+}
+
+message CreateJoinTokenResponse {
+  string token = 1; // the one-time "mcl1_..." string
+  JoinToken join_token = 2;
+}
+
+message ListJoinTokensRequest {}
+
+message ListJoinTokensResponse {
+  repeated JoinToken tokens = 1;
+}
+
+message RevokeJoinTokenRequest {
+  string id = 1;
+}
+
+message RevokeJoinTokenResponse {}
+
+service TokenService {
+  rpc CreateJoinToken(CreateJoinTokenRequest) returns (CreateJoinTokenResponse);
+  rpc ListJoinTokens(ListJoinTokensRequest) returns (ListJoinTokensResponse);
+  rpc RevokeJoinToken(RevokeJoinTokenRequest) returns (RevokeJoinTokenResponse);
+}
+
+// ---- Nodes ----
+
+message ListNodesRequest {}
+
+message ListNodesResponse {
+  repeated Node nodes = 1;
+}
+
+message GetNodeRequest {
+  string name = 1;
+}
+
+message GetNodeResponse {
+  Node node = 1;
+}
+
+// RemoveNode revokes the node's certificate, disconnects it and tears down its
+// sandboxes.
+message RemoveNodeRequest {
+  string name = 1;
+}
+
+message RemoveNodeResponse {}
+
+message SetNodeCapsRequest {
+  string name = 1;
+  Capabilities caps_enabled = 2; // must be a subset of the ceiling
+}
+
+message SetNodeCapsResponse {
+  Node node = 1;
+}
+
+service NodeService {
+  rpc ListNodes(ListNodesRequest) returns (ListNodesResponse);
+  rpc GetNode(GetNodeRequest) returns (GetNodeResponse);
+  rpc RemoveNode(RemoveNodeRequest) returns (RemoveNodeResponse);
+  rpc SetNodeCaps(SetNodeCapsRequest) returns (SetNodeCapsResponse);
+}
+
+// ---- Users ----
+
+message CreateUserRequest {
+  string name = 1;
+  Role role = 2;
+}
+
+message CreateUserResponse {
+  User user = 1;
+  string api_key = 2; // "mck_..." shown once
+}
+
+message ListUsersRequest {}
+
+message ListUsersResponse {
+  repeated User users = 1;
+}
+
+message RemoveUserRequest {
+  string id = 1;
+}
+
+message RemoveUserResponse {}
+
+message CreateApiKeyRequest {
+  string user_id = 1; // empty = caller
+}
+
+message CreateApiKeyResponse {
+  ApiKey key = 1;
+  string api_key = 2;
+}
+
+message WhoamiRequest {}
+
+message WhoamiResponse {
+  User user = 1;
+  string hub_url = 2;
+  string trust_domain = 3;
+  string ca_fingerprint = 4;
+}
+
+service UserService {
+  rpc CreateUser(CreateUserRequest) returns (CreateUserResponse);
+  rpc ListUsers(ListUsersRequest) returns (ListUsersResponse);
+  rpc RemoveUser(RemoveUserRequest) returns (RemoveUserResponse);
+  rpc CreateApiKey(CreateApiKeyRequest) returns (CreateApiKeyResponse);
+  rpc Whoami(WhoamiRequest) returns (WhoamiResponse);
+}
+
+// ---- Agents ----
+
+message Agent {
+  string id = 1; // "agent:<name>@<node>"
+  string name = 2;
+  string node_name = 3;
+  string sandbox_id = 4;
+  string owner_id = 5;
+  string harness = 6;
+  string state = 7; // running, paused, stopped
+  string created_at = 8;
+  string token_expires_at = 9;
+}
+
+message ListAgentsRequest {}
+
+message ListAgentsResponse {
+  repeated Agent agents = 1;
+}
+
+message RevokeAgentRequest {
+  string id = 1;
+}
+
+message RevokeAgentResponse {}
+
+service AgentService {
+  rpc ListAgents(ListAgentsRequest) returns (ListAgentsResponse);
+  rpc RevokeAgent(RevokeAgentRequest) returns (RevokeAgentResponse);
+}

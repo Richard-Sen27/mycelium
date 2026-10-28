@@ -1,0 +1,35 @@
+syntax = "proto3";
+
+package mycel.v1;
+
+// Role of a human user on the hub.
+enum Role {
+  ROLE_UNSPECIFIED = 0;
+  ROLE_ADMIN = 1;
+  ROLE_MEMBER = 2;
+}
+
+// Capability names a node may offer. Kept as strings on the wire so new
+// capabilities do not need a schema change; the hub validates against the
+// known set: "docker", "ollama", "gpu", "sandbox".
+message Capabilities {
+  repeated string names = 1;
+}
+
+// User is a human member of the hub.
+message User {
+  string id = 1;
+  string name = 2;
+  Role role = 3;
+  string created_at = 4; // RFC 3339
+}
+
+// ApiKey is a credential bound to a user. The secret is only returned once,
+// at creation.
+message ApiKey {
+  string id = 1;
+  string user_id = 2;
+  repeated string scopes = 3; // phase 1: ["user"]
+  string created_at = 4;
+  string last_used_at = 5;
+}

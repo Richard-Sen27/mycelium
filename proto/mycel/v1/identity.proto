@@ -1,0 +1,59 @@
+syntax = "proto3";
+
+package mycel.v1;
+
+import "mycel/v1/common.proto";
+
+// JoinTokenPayload is what the join token string encodes:
+// "mcl1_" + base64url(JoinTokenPayload). The secret is random; the hub keeps
+// only its SHA-256.
+message JoinTokenPayload {
+  string hub_url = 1; // https://host:port
+  string token_id = 2; // 16 random bytes, hex
+  bytes secret = 3; // 32 random bytes
+  string ca_fingerprint = 4; // sha256 of the hub CA cert DER, lowercase hex
+}
+
+// JoinToken is the hub-side record of a join token (never contains the secret).
+message JoinToken {
+  string id = 1;
+  string node_name = 2;
+  Capabilities caps = 3;
+  string owner_id = 4; // user who created it; the node will belong to them
+  string created_at = 5;
+  string expires_at = 6;
+  string used_at = 7; // empty until burned
+  string revoked_at = 8;
+}
+
+message EnrolRequest {
+  string token = 1; // the full "mcl1_..." string
+  bytes csr_der = 2; // PKCS#10 CSR, DER; subject CN must equal the token's node name
+}
+
+message EnrolResponse {
+  string node_id = 1; // "node:<name>"
+  string spiffe_id = 2; // spiffe://<trust-domain>/node/<name>
+  bytes cert_pem = 3;
+  bytes ca_pem = 4;
+  string bus_url = 5; // tls://host:port of the hub's NATS listener
+  string hub_url = 6;
+  Capabilities caps = 7; // approved ceiling
+  string owner_id = 8;
+}
+
+message RenewRequest {
+  bytes csr_der = 1; // same name as the presenting client certificate
+}
+
+message RenewResponse {
+  bytes cert_pem = 1;
+  bytes ca_pem = 2;
+}
+
+// EnrolService is reachable without an API key. Enrol needs a valid join
+// token; Renew needs the node's current certificate as the TLS client cert.
+service EnrolService {
+  rpc Enrol(EnrolRequest) returns (EnrolResponse);
+  rpc Renew(RenewRequest) returns (RenewResponse);
+}

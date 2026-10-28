@@ -1,0 +1,118 @@
+syntax = "proto3";
+
+package mycel.v1;
+
+import "mycel/v1/common.proto";
+
+message Gpu {
+  int32 index = 1;
+  string vendor = 2; // nvidia, amd, apple, intel
+  string model = 3;
+  uint64 vram_bytes = 4;
+  string driver = 5;
+}
+
+message ToolPresence {
+  bool present = 1;
+  string version = 2;
+  string path = 3;
+}
+
+// Inventory is what a node reports about itself.
+message Inventory {
+  string os = 1; // darwin, windows, linux
+  string arch = 2; // arm64, amd64
+  string hostname = 3;
+  string os_version = 4;
+  int32 cpu_count = 5;
+  string cpu_model = 6;
+  uint64 mem_bytes = 7;
+  repeated Gpu gpus = 8;
+  ToolPresence docker = 9;
+  ToolPresence ollama = 10;
+  repeated string sandbox_backends = 11; // e.g. applevf, wsl2-gvisor, gvisor, firecracker, fake
+  string mycel_version = 12;
+  string probed_at = 13;
+}
+
+// Node is the hub's view of an enrolled machine.
+message Node {
+  string id = 1; // "node:<name>"
+  string name = 2;
+  string spiffe_id = 3;
+  string owner_id = 4;
+  Capabilities caps_ceiling = 5; // pinned by the join token
+  Capabilities caps_enabled = 6; // what the owner has switched on, subset of ceiling
+  Inventory inventory = 7;
+  bool online = 8;
+  string last_seen_at = 9;
+  string cert_serial = 10;
+  string cert_not_after = 11;
+  string created_at = 12;
+}
+
+// ---- Bus messages (node <-> hub over NATS) ----
+
+// Published by a node on node.<name>.telemetry every few seconds.
+message Heartbeat {
+  string node_name = 1;
+  Inventory inventory = 2; // full inventory on first beat and when it changes; may be empty otherwise
+  string inventory_hash = 3;
+  uint64 uptime_seconds = 4;
+  string sent_at = 5;
+}
+
+// Sent by the hub to node.<name>.ctl as a request; the node replies with CtlResponse.
+message CtlRequest {
+  oneof cmd {
+    Ping ping = 1;
+    Revoked revoked = 2; // the node must stop and forget its identity
+    SetCaps set_caps = 3;
+    Shutdown shutdown = 4;
+  }
+}
+
+message Ping {}
+
+message Revoked {
+  string reason = 1;
+}
+
+message SetCaps {
+  Capabilities caps_enabled = 1;
+}
+
+message Shutdown {
+  string reason = 1;
+}
+
+message CtlResponse {
+  bool ok = 1;
+  string error = 2;
+}
+
+// Node-originated RPCs are published on node.<name>.rpc.<method> with a reply
+// subject. The hub derives the node name from the subject, never from the
+// payload.
+
+message RegisterAgentRequest {
+  string agent_name = 1;
+  string sandbox_id = 2; // empty for trusted-host agents
+  string harness = 3;
+}
+
+message RegisterAgentResponse {
+  string agent_id = 1; // "agent:<name>@<node>"
+  string token = 2; // 1h agent token bound to node and sandbox
+  string expires_at = 3;
+}
+
+message RefreshAgentTokenRequest {
+  string agent_id = 1;
+  string token = 2; // current, still-valid token
+}
+
+message RefreshAgentTokenResponse {
+  string token = 1;
+  string expires_at = 2;
+}
