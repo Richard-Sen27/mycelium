@@ -271,6 +271,9 @@ func (a *app) rootCmd() *cobra.Command {
 		a.readCmd(),
 		a.bbCmd(),
 		a.workersCmd(),
+		a.jobCmd(),
+		a.profilesCmd(),
+		a.artifactsCmd(),
 	)
 	for _, mk := range extraCommands {
 		root.AddCommand(mk(a))

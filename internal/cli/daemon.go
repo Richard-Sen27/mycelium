@@ -44,6 +44,7 @@ type roleResult struct {
 
 func (a *app) daemonCmd() *cobra.Command {
 	var apiListen, busListen, localAddr string
+	var allowFakeProfile bool
 	cmd := &cobra.Command{
 		Use:   "daemon",
 		Short: "Run every role initialised on this machine (hub and/or node)",
@@ -63,6 +64,13 @@ func (a *app) daemonCmd() *cobra.Command {
 			}
 			if !runHub && (cmd.Flags().Changed("api-listen") || cmd.Flags().Changed("bus-listen")) {
 				a.log.Warn("--api-listen and --bus-listen only apply to the hub role, which is not initialised here")
+			}
+			if allowFakeProfile {
+				if runHub {
+					a.log.Warn("--allow-fake-profile: the CI-only fake sandbox profile (no isolation) is loaded")
+				} else {
+					a.log.Warn("--allow-fake-profile only applies to the hub role, which is not initialised here")
+				}
 			}
 
 			sigCtx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
@@ -91,7 +99,8 @@ func (a *app) daemonCmd() *cobra.Command {
 				}()
 			}
 			if runHub {
-				opts := hub.Options{HubDir: dirs.HubDir(), APIListen: apiListen, BusListen: busListen, Logger: a.log.With("role", "hub")}
+				opts := hub.Options{HubDir: dirs.HubDir(), APIListen: apiListen, BusListen: busListen, Logger: a.log.With("role", "hub"),
+					AllowFakeProfile: allowFakeProfile}
 				start("hub", func() error { return a.hubRun(ctx, opts, hubReady) })
 			}
 			if runNode {
@@ -175,6 +184,8 @@ func (a *app) daemonCmd() *cobra.Command {
 	f.StringVar(&apiListen, "api-listen", "", "hub API listen address (overrides hub.yaml)")
 	f.StringVar(&busListen, "bus-listen", "", "hub bus listen address (overrides hub.yaml)")
 	f.StringVar(&localAddr, "local-addr", defaultLocalAddr, "node local UI and status address (default "+hubMachineLocalAddr+" when the hub role also runs)")
+	f.BoolVar(&allowFakeProfile, "allow-fake-profile", false, "load the CI-only \"fake\" sandbox profile (no isolation; tests only)")
+	_ = f.MarkHidden("allow-fake-profile")
 	return cmd
 }
 

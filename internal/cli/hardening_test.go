@@ -18,6 +18,10 @@ func TestTermText(t *testing.T) {
 	if got, want := cellText(in), "ok[31mred col line2J"; got != want {
 		t.Errorf("cellText = %q, want %q", got, want)
 	}
+	// A bare carriage return cannot overwrite the line it follows.
+	if got, want := termText("safe\rEVIL\r\nnext\r"), "safe\nEVIL\nnext\n"; got != want {
+		t.Errorf("termText(CR) = %q, want %q", got, want)
+	}
 }
 
 func TestReadStripsControls(t *testing.T) {

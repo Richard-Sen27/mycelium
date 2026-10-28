@@ -139,6 +139,7 @@ type testEnv struct {
 	srv   *httptest.Server
 	hub   *fakeHub
 	ch    *fakeChannels
+	jobs  *fakeJobs
 	home  string
 	caPEM string
 	fp    string
@@ -154,6 +155,11 @@ func newTestEnv(t *testing.T) *testEnv {
 	fc := &fakeChannels{hub: fh}
 	mux.Handle(mycelv1connect.NewChannelServiceHandler(fc))
 	mux.Handle(mycelv1connect.NewAgentServiceHandler(fc))
+	fj := newFakeJobs(fh)
+	mux.Handle(mycelv1connect.NewJobServiceHandler(fj))
+	mux.Handle(mycelv1connect.NewArtifactServiceHandler(fj))
+	mux.HandleFunc("PUT /api/artifacts", fj.putArtifact)
+	mux.HandleFunc("GET /api/artifacts/{id}", fj.getArtifactBytes)
 	var caPEM []byte
 	mux.HandleFunc("GET /ca.pem", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write(caPEM) })
 	srv := httptest.NewTLSServer(mux)
@@ -165,7 +171,7 @@ func newTestEnv(t *testing.T) *testEnv {
 	t.Setenv(config.EnvHome, home)
 	t.Setenv(EnvHubURL, "")
 	t.Setenv(EnvAPIKey, "")
-	return &testEnv{srv: srv, hub: fh, ch: fc, home: home, caPEM: string(caPEM), fp: hex.EncodeToString(sum[:])}
+	return &testEnv{srv: srv, hub: fh, ch: fc, jobs: fj, home: home, caPEM: string(caPEM), fp: hex.EncodeToString(sum[:])}
 }
 
 // writeConfig points the CLI at the test server.

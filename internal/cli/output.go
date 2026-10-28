@@ -153,8 +153,11 @@ func isControl(r rune) bool {
 }
 
 // termText strips C0/C1 controls except newline and tab from text that came
-// from the network before it is printed for a person (--json stays raw).
+// from the network before it is printed for a person (--json stays raw). A
+// bare carriage return becomes a line break so it cannot overwrite a line.
 func termText(s string) string {
+	s = strings.ReplaceAll(s, "\r\n", "\n")
+	s = strings.ReplaceAll(s, "\r", "\n")
 	return strings.Map(func(r rune) rune {
 		if r != '\n' && r != '\t' && isControl(r) {
 			return -1

@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -21,6 +22,8 @@ const testToken = "local-test-token"
 type recorded struct {
 	Method, Path, Body string
 	Session            string // Mycel-Session header
+	Query              string // raw query
+	ContentType        string
 }
 
 // fakeLocal is an httptest fake of the daemon's local API.
@@ -34,6 +37,8 @@ type fakeLocal struct {
 	spawn   *reply // POST /api/local/agents/s1/spawn
 	workers string // GET /api/local/workers
 	stopped []string
+	export  *reply // POST /api/local/agents/s1/artifacts
+	blob    *reply // GET /api/local/agents/s1/artifacts/{id}: body is the bytes
 }
 
 type reply struct {
@@ -77,8 +82,8 @@ func writeJSON(w http.ResponseWriter, status int, body string) {
 func (f *fakeLocal) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	b, _ := io.ReadAll(r.Body)
 	f.mu.Lock()
-	f.reqs = append(f.reqs, recorded{r.Method, r.URL.Path, string(b), r.Header.Get(SessionHeader)})
-	regFail, spawn, workers := f.regFail, f.spawn, f.workers
+	f.reqs = append(f.reqs, recorded{r.Method, r.URL.Path, string(b), r.Header.Get(SessionHeader), r.URL.RawQuery, r.Header.Get("Content-Type")})
+	regFail, spawn, workers, export, blob := f.regFail, f.spawn, f.workers, f.export, f.blob
 	f.mu.Unlock()
 	if r.Header.Get("Authorization") != "Bearer "+testToken {
 		writeJSON(w, http.StatusUnauthorized, `{"error":"bad local token"}`)
@@ -112,6 +117,23 @@ func (f *fakeLocal) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		f.stopped = append(f.stopped, strings.TrimPrefix(r.URL.Path, "/api/local/workers/"))
 		f.mu.Unlock()
 		w.WriteHeader(http.StatusNoContent)
+	case r.Method == http.MethodPost && r.URL.Path == "/api/local/agents/s1/artifacts":
+		if export == nil {
+			writeJSON(w, http.StatusCreated, `{"id":"art_01","name":`+jsonString(r.URL.Query().Get("name"))+`,"size":"`+strconv.Itoa(len(b))+`","sha256":"abc","created_by":"agent:coder@mac","created_at":"2026-10-28T15:00:00Z"}`)
+			return
+		}
+		writeJSON(w, export.status, export.body)
+	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/api/local/agents/s1/artifacts/"):
+		if blob == nil {
+			writeJSON(w, http.StatusNotFound, `{"error":"not_found: no artifact"}`)
+			return
+		}
+		if blob.status != http.StatusOK {
+			writeJSON(w, blob.status, blob.body)
+			return
+		}
+		w.Header().Set("Content-Type", "application/octet-stream")
+		_, _ = io.WriteString(w, blob.body) //nolint:gosec // test fake
 	case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/api/local/agents/s1/rpc/"):
 		m := strings.TrimPrefix(r.URL.Path, "/api/local/agents/s1/rpc/")
 		f.mu.Lock()
@@ -344,7 +366,8 @@ func TestToolDescriptions(t *testing.T) {
 	}
 	want := []string{"whoami", "list_agents", "list_channels", "join_channel", "leave_channel", "post",
 		"read_inbox", "wait_for_message", "read_messages", "blackboard_get", "blackboard_put",
-		"spawn_agent", "list_workers", "stop_agent"}
+		"spawn_agent", "list_workers", "stop_agent",
+		"run_job", "get_job", "job_logs", "cancel_job", "list_artifacts", "export_artifact", "fetch_artifact"}
 	got := map[string]*sdk.Tool{}
 	for _, tl := range res.Tools {
 		got[tl.Name] = tl

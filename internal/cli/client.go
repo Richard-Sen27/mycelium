@@ -28,6 +28,14 @@ type hubClient struct {
 	// stream is the channel service on an HTTP client without an overall
 	// timeout, for Watch.
 	stream mycelv1connect.ChannelServiceClient
+	jobs   mycelv1connect.JobServiceClient
+	// jobStream is the job service without an overall timeout, for StreamLogs.
+	jobStream mycelv1connect.JobServiceClient
+	arts      mycelv1connect.ArtifactServiceClient
+	// raw carries artifact bytes over plain HTTPS (PUT/GET /api/artifacts):
+	// the pinned CA, no overall timeout; authz is its Authorization header.
+	raw   *http.Client
+	authz bearer
 }
 
 const loginHint = "run `mycel login <hub-url> --api-key <key>`, or `mycel hub init` on the hub machine"
@@ -76,6 +84,12 @@ func newHubClient(hubURL, apiKey string, caPEM []byte) (*hubClient, error) {
 		chans:  mycelv1connect.NewChannelServiceClient(hc, base, opts),
 		agents: mycelv1connect.NewAgentServiceClient(hc, base, opts),
 		stream: mycelv1connect.NewChannelServiceClient(&sc, base, opts),
+
+		jobs:      mycelv1connect.NewJobServiceClient(hc, base, opts),
+		jobStream: mycelv1connect.NewJobServiceClient(&sc, base, opts),
+		arts:      mycelv1connect.NewArtifactServiceClient(hc, base, opts),
+		raw:       &sc,
+		authz:     bearer{header: "Bearer " + apiKey},
 	}, nil
 }
 
