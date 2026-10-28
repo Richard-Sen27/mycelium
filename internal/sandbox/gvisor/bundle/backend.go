@@ -166,11 +166,12 @@ func (b *Backend) Available(ctx context.Context) (bool, string) {
 			return false, "WSL is not available (wsl.exe --status failed): " + err.Error()
 		}
 		list, err := output(ctx, b.cfg.Runner, h.WSLListArgv())
+		listed, err := WSLDistroListed(list, err, h.distro())
 		if err != nil {
 			return false, "cannot list WSL distros: " + err.Error()
 		}
-		if !hasLine(DecodeWSLText(list), h.distro()) {
-			return false, fmt.Sprintf("WSL distro %s is not installed", h.distro())
+		if !listed {
+			return false, fmt.Sprintf("the sandbox WSL distro %s is not installed (run `mycel sandbox setup`)", h.distro())
 		}
 	}
 	where := ""

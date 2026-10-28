@@ -16,8 +16,8 @@ To try everything on one machine first, run `scripts/demo.sh` from a checkout: i
 
 Jobs run only inside sandboxes, so the machine that runs a job needs its sandbox runtime:
 
-- **Mac:** [Lima](https://lima-vm.io) 2.x: `brew install lima`.
-- **Windows:** WSL2 (`wsl --install` in an administrator terminal, then reboot), the `mycel-sbx` WSL2 distro with gVisor (`runsc`) and the tools listed in `internal/sandbox/wsl2`, and a Docker client (Docker Desktop) to fetch images. Creating `mycel-sbx` is not automated yet.
+- **Mac:** [Lima](https://lima-vm.io) 2.x: `brew install lima`. `mycel sandbox setup` (step 1) then fetches the VM image and boots a test VM once.
+- **Windows:** WSL2: `wsl --install --no-distribution` in an administrator terminal, then reboot. That is the only manual step: `mycel sandbox setup` (step 2) creates the `mycel-sbx` sandbox distro. Jobs also need a Docker client (Docker Desktop) to fetch their images; setup warns when it is missing.
 
 Both machines must be on the same network, and if the Mac's firewall is on, allow `mycel` to accept incoming connections when macOS asks.
 
@@ -35,9 +35,10 @@ Start the hub. Other machines reach it at the Mac's mDNS name (`scutil --get Loc
 mycel hub init --advertise https://<mac-name>.local:7777
 mycel service install
 mycel service status
+mycel sandbox setup --yes
 ```
 
-`hub init` prints the admin API key once and saves it in your config, so the CLI on the Mac is signed in as admin. `mycel service install` runs the daemon (hub and node) as a launchd agent: it starts now, at every login, and restarts if it stops. Its log is in `mycel service logs -f`. macOS shows a "Background Items Added" notification for it; that is expected (System Settings > General > Login Items lists it).
+`mycel sandbox setup --yes` downloads the pinned Linux VM image for the sandboxes (a few hundred MB, once) and boots one test VM so the first job does not wait; `mycel sandbox status` shows the result. `hub init` prints the admin API key once and saves it in your config, so the CLI on the Mac is signed in as admin. `mycel service install` runs the daemon (hub and node) as a launchd agent: it starts now, at every login, and restarts if it stops. Its log is in `mycel service logs -f`. macOS shows a "Background Items Added" notification for it; that is expected (System Settings > General > Login Items lists it).
 
 Create the Windows user's account and a join token for the PC:
 
@@ -60,10 +61,13 @@ powershell -ExecutionPolicy Bypass -File .\install.ps1
 This installs `mycel.exe` to `%LOCALAPPDATA%\mycel\bin` and adds it to your user PATH; open a new terminal afterwards. Then join and keep the node running:
 
 ```powershell
+mycel sandbox setup --yes
 mycel join <token>
 mycel service install
 mycel service status
 ```
+
+`mycel sandbox setup --yes` creates the `mycel-sbx` WSL2 distro that runs the sandboxes: it downloads a pinned Alpine Linux root filesystem (4 MB) and gVisor (about 100 MB), checks both against the checksums built into `mycel`, imports the distro, configures the distro so it doesn't mount your Windows drives and can't start Windows programs, installs the few tools the sandboxes need from Alpine's signed repositories, and runs a test command under gVisor. The isolation of jobs rests on gVisor, not on these distro settings. It takes a minute or two; run it again at any time to check and repair (`mycel sandbox status` shows the state). If it says WSL is missing, run `wsl --install --no-distribution` as administrator, reboot and run it again.
 
 `mycel join` checks the hub's CA fingerprint against the token before trusting anything and then holds its own certificate. `mycel service install` registers a scheduled task that starts the daemon at your logon (in your session, so it can tell when you are using the PC) and restarts it on failure.
 

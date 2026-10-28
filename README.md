@@ -36,6 +36,8 @@ powershell -ExecutionPolicy Bypass -File .\install.ps1
 
 Both verify the release checksum; `--version v1.2.3` / `-Version v1.2.3` pins a release, `--from-source` / `-FromSource` builds with Go 1.27, `--dry-run` / `-DryRun` shows the steps. To keep the daemon running after the terminal closes, `mycel service install` after `hub init` or `join` (a launchd agent, a systemd user unit or a logon task; `mycel service status | logs -f | uninstall`).
 
+Jobs run only in sandboxes. `mycel sandbox setup` prepares this machine's backend and `mycel sandbox status` reports it: on Windows it creates the `mycel-sbx` WSL2 distro with gVisor from pinned, checksum-verified downloads, so enabling WSL2 (`wsl --install --no-distribution` as administrator, then reboot) is the only manual step; on macOS it needs Lima (`brew install lima`) and pre-fetches the VM image; on Linux it checks gVisor (`--yes` installs the pinned `runsc` into `~/.local/bin`), cgroup v2 and user namespaces.
+
 [docs/quickstart.md](docs/quickstart.md) takes a Mac and a Windows PC from nothing to a shared job in ten minutes; `scripts/demo.sh` runs the same tour on one machine.
 
 ## Five-minute start

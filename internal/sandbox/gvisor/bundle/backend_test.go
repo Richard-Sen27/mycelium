@@ -103,6 +103,11 @@ func TestAvailableWSL(t *testing.T) {
 		{"all present", nil, true, ""},
 		{"wsl missing", map[string]reply{"wsl.exe --status": {err: errors.New("executable file not found")}}, false, "WSL is not available"},
 		{"distro missing", map[string]reply{"wsl.exe --list --quiet": {stdout: string(utf16le("Ubuntu\r\n", true))}}, false, "mycel-sbx is not installed"},
+		{"no distros at all", map[string]reply{"wsl.exe --list --quiet": {
+			stdout: string(utf16le("Windows Subsystem for Linux has no installed distributions.\r\n", false)),
+			err:    &ExitError{Argv: []string{"wsl.exe", "--list", "--quiet"}, Code: 1}}}, false, "mycel-sbx is not installed (run `mycel sandbox setup`)"},
+		{"no distros, silent", map[string]reply{"wsl.exe --list --quiet": {err: &ExitError{Code: 1}}}, false, "mycel-sbx is not installed"},
+		{"list fails", map[string]reply{"wsl.exe --list --quiet": {stdout: "Access is denied.", err: &ExitError{Code: 5}}}, false, "cannot list WSL distros"},
 		{"runsc missing", map[string]reply{"wsl.exe -d mycel-sbx -u root --exec runsc --version": {err: failed("runsc")}}, false, "runsc not found in the WSL distro"},
 		{"no firewall", map[string]reply{"wsl.exe -d mycel-sbx -u root --exec nft": {err: failed()}, "wsl.exe -d mycel-sbx -u root --exec iptables": {err: failed()}}, false, "neither nft nor iptables found in the WSL distro"},
 	}

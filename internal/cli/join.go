@@ -69,6 +69,7 @@ func (a *app) joinCmd() *cobra.Command {
 			row(tw, "  Caps ceiling:", dash(strings.Join(res.Caps, ",")))
 			row(tw, "  Cert expires:", dash(res.CertNotAfter))
 			_ = tw.Flush()
+			a.printSandboxHint(cmd.Context(), w)
 			_, err = fmt.Fprintf(w, "\nNext: run `mycel daemon` to connect and report inventory.\n")
 			return err
 		},

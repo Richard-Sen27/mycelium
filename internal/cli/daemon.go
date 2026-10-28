@@ -114,6 +114,7 @@ func (a *app) daemonCmd() *cobra.Command {
 			if runNode {
 				opts := daemon.Options{NodeDir: dirs.NodeDir(), LocalAddr: localAddr, Logger: a.log.With("role", "node")}
 				start("node", func() error { return a.daemonRun(ctx, opts, nodeReady) })
+				go a.sandboxHint(ctx)
 			}
 
 			var results []roleResult
