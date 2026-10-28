@@ -259,7 +259,7 @@ func (s *server) mux() http.Handler {
 	mux.Handle(mycelv1connect.NewTokenServiceHandler(&tokenService{s}, opts...))
 	mux.Handle(mycelv1connect.NewNodeServiceHandler(&nodeService{s}, opts...))
 	mux.Handle(mycelv1connect.NewUserServiceHandler(&userService{s}, opts...))
-	mux.Handle(mycelv1connect.NewAgentServiceHandler(&agentService{s}, opts...))
+	mux.Handle(mycelv1connect.NewAgentServiceHandler(&agentService{s: s}, opts...))
 	mux.Handle(mycelv1connect.NewEnrolServiceHandler(&enrolService{s}, opts...))
 	chPath, chHandler := mycelv1connect.NewChannelServiceHandler(&channelService{s}, opts...)
 	mux.Handle(chPath, streamDeadlines(chHandler))

@@ -19,18 +19,18 @@ Status: done locally (all packages merged, acceptance tests green on macOS; CI o
 
 Acceptance (from spec): a hub and two nodes join with tokens; a reused or expired token is refused; a revoked node is disconnected within 5 seconds; `mycel nodes ls` shows both nodes with inventory.
 
-Open issues: CI matrix not yet exercised (repo never pushed). Manual smoke test with real Claude Code on two machines not yet done (needs a second machine).
+Open issues: CI matrix not yet exercised (repo never pushed). Manual smoke test with real Claude Code on two machines not yet done (needs a second machine). e2e review items to fold into P2-e2e: build the binary with -race when the test runs with -race; assert the hub's "invalid or expired token" text in the three refusal tests; tamper the token by re-encoding a flipped secret byte; prove end to end that a removed node's certificate is refused by the hub (bus and Renew) within 5 s; allocate all free ports before releasing any.
 
 ## Phase 2 — Bus, channels and MCP adapter
 
-Status: contracts merged (D016); round 1 starting
+Status: round 1 merged (channels/hub, daemon local API, MCP adapter and CLI); P2-e2e in progress
 
 | Package | Owns | Status | Notes |
 | --- | --- | --- | --- |
-| P2-channels | `internal/channels`, `internal/hub` (channels, messages, inbox, blackboard, ChannelService, agent RPCs, JetStream CH/AUDIT, #general/#alerts, policy actions) | todo | the largest package |
-| P2-daemon-local | `internal/daemon` (local token, local API, agent sessions, RPC proxy, cursors) | todo | |
-| P2-mcp | `internal/adapters/mcp`, `internal/cli` (mcp, hook, agent setup, channels, post, read, bb) | todo | official MCP Go SDK |
-| P2-e2e | `test/fakeharness`, `test/e2e` phase 2 tests | todo | after the three above |
+| P2-channels | `internal/channels`, `internal/hub` (channels, messages, inbox, blackboard, ChannelService, agent RPCs, JetStream CH/AUDIT, #general/#alerts, policy actions) | merged | the largest package |
+| P2-daemon-local | `internal/daemon` (local token, local API, agent sessions, RPC proxy, cursors) | merged | |
+| P2-mcp | `internal/adapters/mcp`, `internal/cli` (mcp, hook, agent setup, channels, post, read, bb) | merged | official MCP Go SDK |
+| P2-e2e | `test/fakeharness`, `test/e2e` phase 2 tests | in progress | after the three above |
 
 Acceptance (from spec): two fake harnesses on two nodes complete a scripted task in a task channel; the hop limit stops a ping-pong loop; by hand, two real Claude Code sessions on two machines exchange messages.
 
@@ -38,7 +38,18 @@ Open issues: none.
 
 ## Phase 3 — Orchestrator and local workers
 
-Status: todo
+Status: contracts merged (proto, bus, policy, local API, MCP, harness spawn section); implementation starts when phase 2 acceptance passes
+
+| Package | Owns | Status | Notes |
+| --- | --- | --- | --- |
+| P3-hub | `internal/hub`, `internal/policy` | todo | agent lifecycle, budgets, usage accounting, pause/resume/stop, AgentService phase 3 methods, paused-agent RPC refusals, EVENTs |
+| P3-daemon-spawn | `internal/daemon` | todo | spawn endpoint, worker processes, usage parsers, AgentCtl, workers listing |
+| P3-mcp-cli | `internal/adapters/mcp`, `internal/cli`, `harnesses` | todo | spawn_agent/list_workers/stop_agent tools, `mycel agents` lifecycle commands, spawn sections for claude-code, codex, gemini-cli, fake manifest, `mycel fakeharness` (build tag) |
+| P3-e2e | `test/**` | todo | orchestrator spawns two workers; exhausted budget pauses them |
+
+Acceptance (from spec): an orchestrator spawns two local workers that join a channel and report results; an exhausted budget pauses them.
+
+Open issues: none.
 
 ## Phase 4 — Sandboxes and jobs
 

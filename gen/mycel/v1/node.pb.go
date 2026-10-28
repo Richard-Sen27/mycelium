@@ -517,6 +517,7 @@ type CtlRequest struct {
 	//	*CtlRequest_Revoked
 	//	*CtlRequest_SetCaps
 	//	*CtlRequest_Shutdown
+	//	*CtlRequest_Agent
 	Cmd           isCtlRequest_Cmd `protobuf_oneof:"cmd"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -595,6 +596,15 @@ func (x *CtlRequest) GetShutdown() *Shutdown {
 	return nil
 }
 
+func (x *CtlRequest) GetAgent() *AgentCtl {
+	if x != nil {
+		if x, ok := x.Cmd.(*CtlRequest_Agent); ok {
+			return x.Agent
+		}
+	}
+	return nil
+}
+
 type isCtlRequest_Cmd interface {
 	isCtlRequest_Cmd()
 }
@@ -615,6 +625,10 @@ type CtlRequest_Shutdown struct {
 	Shutdown *Shutdown `protobuf:"bytes,4,opt,name=shutdown,proto3,oneof"`
 }
 
+type CtlRequest_Agent struct {
+	Agent *AgentCtl `protobuf:"bytes,5,opt,name=agent,proto3,oneof"` // phase 3: pause, resume or stop one local agent
+}
+
 func (*CtlRequest_Ping) isCtlRequest_Cmd() {}
 
 func (*CtlRequest_Revoked) isCtlRequest_Cmd() {}
@@ -622,6 +636,71 @@ func (*CtlRequest_Revoked) isCtlRequest_Cmd() {}
 func (*CtlRequest_SetCaps) isCtlRequest_Cmd() {}
 
 func (*CtlRequest_Shutdown) isCtlRequest_Cmd() {}
+
+func (*CtlRequest_Agent) isCtlRequest_Cmd() {}
+
+// AgentCtl is sent by the hub when an agent is paused (budget exhausted,
+// kill switch), resumed or stopped. The node applies it to the local worker
+// process and to the agent's local session.
+type AgentCtl struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	AgentId       string                 `protobuf:"bytes,1,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
+	Action        string                 `protobuf:"bytes,2,opt,name=action,proto3" json:"action,omitempty"` // "pause", "resume", "stop"
+	Reason        string                 `protobuf:"bytes,3,opt,name=reason,proto3" json:"reason,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AgentCtl) Reset() {
+	*x = AgentCtl{}
+	mi := &file_mycel_v1_node_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AgentCtl) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AgentCtl) ProtoMessage() {}
+
+func (x *AgentCtl) ProtoReflect() protoreflect.Message {
+	mi := &file_mycel_v1_node_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AgentCtl.ProtoReflect.Descriptor instead.
+func (*AgentCtl) Descriptor() ([]byte, []int) {
+	return file_mycel_v1_node_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *AgentCtl) GetAgentId() string {
+	if x != nil {
+		return x.AgentId
+	}
+	return ""
+}
+
+func (x *AgentCtl) GetAction() string {
+	if x != nil {
+		return x.Action
+	}
+	return ""
+}
+
+func (x *AgentCtl) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
 
 type Ping struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -631,7 +710,7 @@ type Ping struct {
 
 func (x *Ping) Reset() {
 	*x = Ping{}
-	mi := &file_mycel_v1_node_proto_msgTypes[6]
+	mi := &file_mycel_v1_node_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -643,7 +722,7 @@ func (x *Ping) String() string {
 func (*Ping) ProtoMessage() {}
 
 func (x *Ping) ProtoReflect() protoreflect.Message {
-	mi := &file_mycel_v1_node_proto_msgTypes[6]
+	mi := &file_mycel_v1_node_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -656,7 +735,7 @@ func (x *Ping) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Ping.ProtoReflect.Descriptor instead.
 func (*Ping) Descriptor() ([]byte, []int) {
-	return file_mycel_v1_node_proto_rawDescGZIP(), []int{6}
+	return file_mycel_v1_node_proto_rawDescGZIP(), []int{7}
 }
 
 type Revoked struct {
@@ -668,7 +747,7 @@ type Revoked struct {
 
 func (x *Revoked) Reset() {
 	*x = Revoked{}
-	mi := &file_mycel_v1_node_proto_msgTypes[7]
+	mi := &file_mycel_v1_node_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -680,7 +759,7 @@ func (x *Revoked) String() string {
 func (*Revoked) ProtoMessage() {}
 
 func (x *Revoked) ProtoReflect() protoreflect.Message {
-	mi := &file_mycel_v1_node_proto_msgTypes[7]
+	mi := &file_mycel_v1_node_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -693,7 +772,7 @@ func (x *Revoked) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Revoked.ProtoReflect.Descriptor instead.
 func (*Revoked) Descriptor() ([]byte, []int) {
-	return file_mycel_v1_node_proto_rawDescGZIP(), []int{7}
+	return file_mycel_v1_node_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *Revoked) GetReason() string {
@@ -712,7 +791,7 @@ type SetCaps struct {
 
 func (x *SetCaps) Reset() {
 	*x = SetCaps{}
-	mi := &file_mycel_v1_node_proto_msgTypes[8]
+	mi := &file_mycel_v1_node_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -724,7 +803,7 @@ func (x *SetCaps) String() string {
 func (*SetCaps) ProtoMessage() {}
 
 func (x *SetCaps) ProtoReflect() protoreflect.Message {
-	mi := &file_mycel_v1_node_proto_msgTypes[8]
+	mi := &file_mycel_v1_node_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -737,7 +816,7 @@ func (x *SetCaps) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetCaps.ProtoReflect.Descriptor instead.
 func (*SetCaps) Descriptor() ([]byte, []int) {
-	return file_mycel_v1_node_proto_rawDescGZIP(), []int{8}
+	return file_mycel_v1_node_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *SetCaps) GetCapsEnabled() *Capabilities {
@@ -756,7 +835,7 @@ type Shutdown struct {
 
 func (x *Shutdown) Reset() {
 	*x = Shutdown{}
-	mi := &file_mycel_v1_node_proto_msgTypes[9]
+	mi := &file_mycel_v1_node_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -768,7 +847,7 @@ func (x *Shutdown) String() string {
 func (*Shutdown) ProtoMessage() {}
 
 func (x *Shutdown) ProtoReflect() protoreflect.Message {
-	mi := &file_mycel_v1_node_proto_msgTypes[9]
+	mi := &file_mycel_v1_node_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -781,7 +860,7 @@ func (x *Shutdown) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Shutdown.ProtoReflect.Descriptor instead.
 func (*Shutdown) Descriptor() ([]byte, []int) {
-	return file_mycel_v1_node_proto_rawDescGZIP(), []int{9}
+	return file_mycel_v1_node_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *Shutdown) GetReason() string {
@@ -801,7 +880,7 @@ type CtlResponse struct {
 
 func (x *CtlResponse) Reset() {
 	*x = CtlResponse{}
-	mi := &file_mycel_v1_node_proto_msgTypes[10]
+	mi := &file_mycel_v1_node_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -813,7 +892,7 @@ func (x *CtlResponse) String() string {
 func (*CtlResponse) ProtoMessage() {}
 
 func (x *CtlResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_mycel_v1_node_proto_msgTypes[10]
+	mi := &file_mycel_v1_node_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -826,7 +905,7 @@ func (x *CtlResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CtlResponse.ProtoReflect.Descriptor instead.
 func (*CtlResponse) Descriptor() ([]byte, []int) {
-	return file_mycel_v1_node_proto_rawDescGZIP(), []int{10}
+	return file_mycel_v1_node_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *CtlResponse) GetOk() bool {
@@ -844,17 +923,22 @@ func (x *CtlResponse) GetError() string {
 }
 
 type RegisterAgentRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	AgentName     string                 `protobuf:"bytes,1,opt,name=agent_name,json=agentName,proto3" json:"agent_name,omitempty"`
-	SandboxId     string                 `protobuf:"bytes,2,opt,name=sandbox_id,json=sandboxId,proto3" json:"sandbox_id,omitempty"` // empty for trusted-host agents
-	Harness       string                 `protobuf:"bytes,3,opt,name=harness,proto3" json:"harness,omitempty"`
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	AgentName string                 `protobuf:"bytes,1,opt,name=agent_name,json=agentName,proto3" json:"agent_name,omitempty"`
+	SandboxId string                 `protobuf:"bytes,2,opt,name=sandbox_id,json=sandboxId,proto3" json:"sandbox_id,omitempty"` // empty for trusted-host agents
+	Harness   string                 `protobuf:"bytes,3,opt,name=harness,proto3" json:"harness,omitempty"`
+	// Phase 3: set when the agent was spawned by another agent on this node.
+	Parent        string  `protobuf:"bytes,4,opt,name=parent,proto3" json:"parent,omitempty"`                              // "agent:<name>@<node>" of the spawner, empty for orchestrators
+	HomeChannel   string  `protobuf:"bytes,5,opt,name=home_channel,json=homeChannel,proto3" json:"home_channel,omitempty"` // channel the worker was spawned for; its usage counts there
+	Budget        *Budget `protobuf:"bytes,6,opt,name=budget,proto3" json:"budget,omitempty"`                              // per-agent ceiling; zero = unlimited
+	Workdir       string  `protobuf:"bytes,7,opt,name=workdir,proto3" json:"workdir,omitempty"`                            // informational
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *RegisterAgentRequest) Reset() {
 	*x = RegisterAgentRequest{}
-	mi := &file_mycel_v1_node_proto_msgTypes[11]
+	mi := &file_mycel_v1_node_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -866,7 +950,7 @@ func (x *RegisterAgentRequest) String() string {
 func (*RegisterAgentRequest) ProtoMessage() {}
 
 func (x *RegisterAgentRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_mycel_v1_node_proto_msgTypes[11]
+	mi := &file_mycel_v1_node_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -879,7 +963,7 @@ func (x *RegisterAgentRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RegisterAgentRequest.ProtoReflect.Descriptor instead.
 func (*RegisterAgentRequest) Descriptor() ([]byte, []int) {
-	return file_mycel_v1_node_proto_rawDescGZIP(), []int{11}
+	return file_mycel_v1_node_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *RegisterAgentRequest) GetAgentName() string {
@@ -903,6 +987,258 @@ func (x *RegisterAgentRequest) GetHarness() string {
 	return ""
 }
 
+func (x *RegisterAgentRequest) GetParent() string {
+	if x != nil {
+		return x.Parent
+	}
+	return ""
+}
+
+func (x *RegisterAgentRequest) GetHomeChannel() string {
+	if x != nil {
+		return x.HomeChannel
+	}
+	return ""
+}
+
+func (x *RegisterAgentRequest) GetBudget() *Budget {
+	if x != nil {
+		return x.Budget
+	}
+	return nil
+}
+
+func (x *RegisterAgentRequest) GetWorkdir() string {
+	if x != nil {
+		return x.Workdir
+	}
+	return ""
+}
+
+type AgentUsageRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	AgentId       string                 `protobuf:"bytes,1,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
+	Tokens        int64                  `protobuf:"varint,2,opt,name=tokens,proto3" json:"tokens,omitempty"` // increment since the last report
+	Usd           float64                `protobuf:"fixed64,3,opt,name=usd,proto3" json:"usd,omitempty"`      // increment since the last report
+	Turns         int32                  `protobuf:"varint,4,opt,name=turns,proto3" json:"turns,omitempty"`   // increment
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AgentUsageRequest) Reset() {
+	*x = AgentUsageRequest{}
+	mi := &file_mycel_v1_node_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AgentUsageRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AgentUsageRequest) ProtoMessage() {}
+
+func (x *AgentUsageRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_mycel_v1_node_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AgentUsageRequest.ProtoReflect.Descriptor instead.
+func (*AgentUsageRequest) Descriptor() ([]byte, []int) {
+	return file_mycel_v1_node_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *AgentUsageRequest) GetAgentId() string {
+	if x != nil {
+		return x.AgentId
+	}
+	return ""
+}
+
+func (x *AgentUsageRequest) GetTokens() int64 {
+	if x != nil {
+		return x.Tokens
+	}
+	return 0
+}
+
+func (x *AgentUsageRequest) GetUsd() float64 {
+	if x != nil {
+		return x.Usd
+	}
+	return 0
+}
+
+func (x *AgentUsageRequest) GetTurns() int32 {
+	if x != nil {
+		return x.Turns
+	}
+	return 0
+}
+
+type AgentUsageResponse struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	AgentRemaining   *Budget                `protobuf:"bytes,1,opt,name=agent_remaining,json=agentRemaining,proto3" json:"agent_remaining,omitempty"` // negative numbers mean exhausted
+	ChannelRemaining *Budget                `protobuf:"bytes,2,opt,name=channel_remaining,json=channelRemaining,proto3" json:"channel_remaining,omitempty"`
+	Paused           bool                   `protobuf:"varint,3,opt,name=paused,proto3" json:"paused,omitempty"` // the hub paused the agent (budget exhausted or kill switch)
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *AgentUsageResponse) Reset() {
+	*x = AgentUsageResponse{}
+	mi := &file_mycel_v1_node_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AgentUsageResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AgentUsageResponse) ProtoMessage() {}
+
+func (x *AgentUsageResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_mycel_v1_node_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AgentUsageResponse.ProtoReflect.Descriptor instead.
+func (*AgentUsageResponse) Descriptor() ([]byte, []int) {
+	return file_mycel_v1_node_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *AgentUsageResponse) GetAgentRemaining() *Budget {
+	if x != nil {
+		return x.AgentRemaining
+	}
+	return nil
+}
+
+func (x *AgentUsageResponse) GetChannelRemaining() *Budget {
+	if x != nil {
+		return x.ChannelRemaining
+	}
+	return nil
+}
+
+func (x *AgentUsageResponse) GetPaused() bool {
+	if x != nil {
+		return x.Paused
+	}
+	return false
+}
+
+type AgentExitedRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	AgentId       string                 `protobuf:"bytes,1,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
+	ExitCode      int32                  `protobuf:"varint,2,opt,name=exit_code,json=exitCode,proto3" json:"exit_code,omitempty"`
+	Reason        string                 `protobuf:"bytes,3,opt,name=reason,proto3" json:"reason,omitempty"` // "finished", "killed", "error: ...", "stopped"
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AgentExitedRequest) Reset() {
+	*x = AgentExitedRequest{}
+	mi := &file_mycel_v1_node_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AgentExitedRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AgentExitedRequest) ProtoMessage() {}
+
+func (x *AgentExitedRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_mycel_v1_node_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AgentExitedRequest.ProtoReflect.Descriptor instead.
+func (*AgentExitedRequest) Descriptor() ([]byte, []int) {
+	return file_mycel_v1_node_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *AgentExitedRequest) GetAgentId() string {
+	if x != nil {
+		return x.AgentId
+	}
+	return ""
+}
+
+func (x *AgentExitedRequest) GetExitCode() int32 {
+	if x != nil {
+		return x.ExitCode
+	}
+	return 0
+}
+
+func (x *AgentExitedRequest) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+type AgentExitedResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AgentExitedResponse) Reset() {
+	*x = AgentExitedResponse{}
+	mi := &file_mycel_v1_node_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AgentExitedResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AgentExitedResponse) ProtoMessage() {}
+
+func (x *AgentExitedResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_mycel_v1_node_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AgentExitedResponse.ProtoReflect.Descriptor instead.
+func (*AgentExitedResponse) Descriptor() ([]byte, []int) {
+	return file_mycel_v1_node_proto_rawDescGZIP(), []int{16}
+}
+
 type RegisterAgentResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	AgentId       string                 `protobuf:"bytes,1,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"` // "agent:<name>@<node>"
@@ -914,7 +1250,7 @@ type RegisterAgentResponse struct {
 
 func (x *RegisterAgentResponse) Reset() {
 	*x = RegisterAgentResponse{}
-	mi := &file_mycel_v1_node_proto_msgTypes[12]
+	mi := &file_mycel_v1_node_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -926,7 +1262,7 @@ func (x *RegisterAgentResponse) String() string {
 func (*RegisterAgentResponse) ProtoMessage() {}
 
 func (x *RegisterAgentResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_mycel_v1_node_proto_msgTypes[12]
+	mi := &file_mycel_v1_node_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -939,7 +1275,7 @@ func (x *RegisterAgentResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RegisterAgentResponse.ProtoReflect.Descriptor instead.
 func (*RegisterAgentResponse) Descriptor() ([]byte, []int) {
-	return file_mycel_v1_node_proto_rawDescGZIP(), []int{12}
+	return file_mycel_v1_node_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *RegisterAgentResponse) GetAgentId() string {
@@ -973,7 +1309,7 @@ type RefreshAgentTokenRequest struct {
 
 func (x *RefreshAgentTokenRequest) Reset() {
 	*x = RefreshAgentTokenRequest{}
-	mi := &file_mycel_v1_node_proto_msgTypes[13]
+	mi := &file_mycel_v1_node_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -985,7 +1321,7 @@ func (x *RefreshAgentTokenRequest) String() string {
 func (*RefreshAgentTokenRequest) ProtoMessage() {}
 
 func (x *RefreshAgentTokenRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_mycel_v1_node_proto_msgTypes[13]
+	mi := &file_mycel_v1_node_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -998,7 +1334,7 @@ func (x *RefreshAgentTokenRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RefreshAgentTokenRequest.ProtoReflect.Descriptor instead.
 func (*RefreshAgentTokenRequest) Descriptor() ([]byte, []int) {
-	return file_mycel_v1_node_proto_rawDescGZIP(), []int{13}
+	return file_mycel_v1_node_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *RefreshAgentTokenRequest) GetAgentId() string {
@@ -1025,7 +1361,7 @@ type RefreshAgentTokenResponse struct {
 
 func (x *RefreshAgentTokenResponse) Reset() {
 	*x = RefreshAgentTokenResponse{}
-	mi := &file_mycel_v1_node_proto_msgTypes[14]
+	mi := &file_mycel_v1_node_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1037,7 +1373,7 @@ func (x *RefreshAgentTokenResponse) String() string {
 func (*RefreshAgentTokenResponse) ProtoMessage() {}
 
 func (x *RefreshAgentTokenResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_mycel_v1_node_proto_msgTypes[14]
+	mi := &file_mycel_v1_node_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1050,7 +1386,7 @@ func (x *RefreshAgentTokenResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RefreshAgentTokenResponse.ProtoReflect.Descriptor instead.
 func (*RefreshAgentTokenResponse) Descriptor() ([]byte, []int) {
-	return file_mycel_v1_node_proto_rawDescGZIP(), []int{14}
+	return file_mycel_v1_node_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *RefreshAgentTokenResponse) GetToken() string {
@@ -1071,7 +1407,7 @@ var File_mycel_v1_node_proto protoreflect.FileDescriptor
 
 const file_mycel_v1_node_proto_rawDesc = "" +
 	"\n" +
-	"\x13mycel/v1/node.proto\x12\bmycel.v1\x1a\x15mycel/v1/common.proto\"\x80\x01\n" +
+	"\x13mycel/v1/node.proto\x12\bmycel.v1\x1a\x15mycel/v1/common.proto\x1a\x17mycel/v1/envelope.proto\"\x80\x01\n" +
 	"\x03Gpu\x12\x14\n" +
 	"\x05index\x18\x01 \x01(\x05R\x05index\x12\x16\n" +
 	"\x06vendor\x18\x02 \x01(\tR\x06vendor\x12\x14\n" +
@@ -1121,14 +1457,19 @@ const file_mycel_v1_node_proto_rawDesc = "" +
 	"\tinventory\x18\x02 \x01(\v2\x13.mycel.v1.InventoryR\tinventory\x12%\n" +
 	"\x0einventory_hash\x18\x03 \x01(\tR\rinventoryHash\x12%\n" +
 	"\x0euptime_seconds\x18\x04 \x01(\x04R\ruptimeSeconds\x12\x17\n" +
-	"\asent_at\x18\x05 \x01(\tR\x06sentAt\"\xca\x01\n" +
+	"\asent_at\x18\x05 \x01(\tR\x06sentAt\"\xf6\x01\n" +
 	"\n" +
 	"CtlRequest\x12$\n" +
 	"\x04ping\x18\x01 \x01(\v2\x0e.mycel.v1.PingH\x00R\x04ping\x12-\n" +
 	"\arevoked\x18\x02 \x01(\v2\x11.mycel.v1.RevokedH\x00R\arevoked\x12.\n" +
 	"\bset_caps\x18\x03 \x01(\v2\x11.mycel.v1.SetCapsH\x00R\asetCaps\x120\n" +
-	"\bshutdown\x18\x04 \x01(\v2\x12.mycel.v1.ShutdownH\x00R\bshutdownB\x05\n" +
-	"\x03cmd\"\x06\n" +
+	"\bshutdown\x18\x04 \x01(\v2\x12.mycel.v1.ShutdownH\x00R\bshutdown\x12*\n" +
+	"\x05agent\x18\x05 \x01(\v2\x12.mycel.v1.AgentCtlH\x00R\x05agentB\x05\n" +
+	"\x03cmd\"U\n" +
+	"\bAgentCtl\x12\x19\n" +
+	"\bagent_id\x18\x01 \x01(\tR\aagentId\x12\x16\n" +
+	"\x06action\x18\x02 \x01(\tR\x06action\x12\x16\n" +
+	"\x06reason\x18\x03 \x01(\tR\x06reason\"\x06\n" +
 	"\x04Ping\"!\n" +
 	"\aRevoked\x12\x16\n" +
 	"\x06reason\x18\x01 \x01(\tR\x06reason\"D\n" +
@@ -1138,13 +1479,31 @@ const file_mycel_v1_node_proto_rawDesc = "" +
 	"\x06reason\x18\x01 \x01(\tR\x06reason\"3\n" +
 	"\vCtlResponse\x12\x0e\n" +
 	"\x02ok\x18\x01 \x01(\bR\x02ok\x12\x14\n" +
-	"\x05error\x18\x02 \x01(\tR\x05error\"n\n" +
+	"\x05error\x18\x02 \x01(\tR\x05error\"\xed\x01\n" +
 	"\x14RegisterAgentRequest\x12\x1d\n" +
 	"\n" +
 	"agent_name\x18\x01 \x01(\tR\tagentName\x12\x1d\n" +
 	"\n" +
 	"sandbox_id\x18\x02 \x01(\tR\tsandboxId\x12\x18\n" +
-	"\aharness\x18\x03 \x01(\tR\aharness\"g\n" +
+	"\aharness\x18\x03 \x01(\tR\aharness\x12\x16\n" +
+	"\x06parent\x18\x04 \x01(\tR\x06parent\x12!\n" +
+	"\fhome_channel\x18\x05 \x01(\tR\vhomeChannel\x12(\n" +
+	"\x06budget\x18\x06 \x01(\v2\x10.mycel.v1.BudgetR\x06budget\x12\x18\n" +
+	"\aworkdir\x18\a \x01(\tR\aworkdir\"n\n" +
+	"\x11AgentUsageRequest\x12\x19\n" +
+	"\bagent_id\x18\x01 \x01(\tR\aagentId\x12\x16\n" +
+	"\x06tokens\x18\x02 \x01(\x03R\x06tokens\x12\x10\n" +
+	"\x03usd\x18\x03 \x01(\x01R\x03usd\x12\x14\n" +
+	"\x05turns\x18\x04 \x01(\x05R\x05turns\"\xa6\x01\n" +
+	"\x12AgentUsageResponse\x129\n" +
+	"\x0fagent_remaining\x18\x01 \x01(\v2\x10.mycel.v1.BudgetR\x0eagentRemaining\x12=\n" +
+	"\x11channel_remaining\x18\x02 \x01(\v2\x10.mycel.v1.BudgetR\x10channelRemaining\x12\x16\n" +
+	"\x06paused\x18\x03 \x01(\bR\x06paused\"d\n" +
+	"\x12AgentExitedRequest\x12\x19\n" +
+	"\bagent_id\x18\x01 \x01(\tR\aagentId\x12\x1b\n" +
+	"\texit_code\x18\x02 \x01(\x05R\bexitCode\x12\x16\n" +
+	"\x06reason\x18\x03 \x01(\tR\x06reason\"\x15\n" +
+	"\x13AgentExitedResponse\"g\n" +
 	"\x15RegisterAgentResponse\x12\x19\n" +
 	"\bagent_id\x18\x01 \x01(\tR\aagentId\x12\x14\n" +
 	"\x05token\x18\x02 \x01(\tR\x05token\x12\x1d\n" +
@@ -1171,7 +1530,7 @@ func file_mycel_v1_node_proto_rawDescGZIP() []byte {
 	return file_mycel_v1_node_proto_rawDescData
 }
 
-var file_mycel_v1_node_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
+var file_mycel_v1_node_proto_msgTypes = make([]protoimpl.MessageInfo, 20)
 var file_mycel_v1_node_proto_goTypes = []any{
 	(*Gpu)(nil),                       // 0: mycel.v1.Gpu
 	(*ToolPresence)(nil),              // 1: mycel.v1.ToolPresence
@@ -1179,35 +1538,45 @@ var file_mycel_v1_node_proto_goTypes = []any{
 	(*Node)(nil),                      // 3: mycel.v1.Node
 	(*Heartbeat)(nil),                 // 4: mycel.v1.Heartbeat
 	(*CtlRequest)(nil),                // 5: mycel.v1.CtlRequest
-	(*Ping)(nil),                      // 6: mycel.v1.Ping
-	(*Revoked)(nil),                   // 7: mycel.v1.Revoked
-	(*SetCaps)(nil),                   // 8: mycel.v1.SetCaps
-	(*Shutdown)(nil),                  // 9: mycel.v1.Shutdown
-	(*CtlResponse)(nil),               // 10: mycel.v1.CtlResponse
-	(*RegisterAgentRequest)(nil),      // 11: mycel.v1.RegisterAgentRequest
-	(*RegisterAgentResponse)(nil),     // 12: mycel.v1.RegisterAgentResponse
-	(*RefreshAgentTokenRequest)(nil),  // 13: mycel.v1.RefreshAgentTokenRequest
-	(*RefreshAgentTokenResponse)(nil), // 14: mycel.v1.RefreshAgentTokenResponse
-	(*Capabilities)(nil),              // 15: mycel.v1.Capabilities
+	(*AgentCtl)(nil),                  // 6: mycel.v1.AgentCtl
+	(*Ping)(nil),                      // 7: mycel.v1.Ping
+	(*Revoked)(nil),                   // 8: mycel.v1.Revoked
+	(*SetCaps)(nil),                   // 9: mycel.v1.SetCaps
+	(*Shutdown)(nil),                  // 10: mycel.v1.Shutdown
+	(*CtlResponse)(nil),               // 11: mycel.v1.CtlResponse
+	(*RegisterAgentRequest)(nil),      // 12: mycel.v1.RegisterAgentRequest
+	(*AgentUsageRequest)(nil),         // 13: mycel.v1.AgentUsageRequest
+	(*AgentUsageResponse)(nil),        // 14: mycel.v1.AgentUsageResponse
+	(*AgentExitedRequest)(nil),        // 15: mycel.v1.AgentExitedRequest
+	(*AgentExitedResponse)(nil),       // 16: mycel.v1.AgentExitedResponse
+	(*RegisterAgentResponse)(nil),     // 17: mycel.v1.RegisterAgentResponse
+	(*RefreshAgentTokenRequest)(nil),  // 18: mycel.v1.RefreshAgentTokenRequest
+	(*RefreshAgentTokenResponse)(nil), // 19: mycel.v1.RefreshAgentTokenResponse
+	(*Capabilities)(nil),              // 20: mycel.v1.Capabilities
+	(*Budget)(nil),                    // 21: mycel.v1.Budget
 }
 var file_mycel_v1_node_proto_depIdxs = []int32{
 	0,  // 0: mycel.v1.Inventory.gpus:type_name -> mycel.v1.Gpu
 	1,  // 1: mycel.v1.Inventory.docker:type_name -> mycel.v1.ToolPresence
 	1,  // 2: mycel.v1.Inventory.ollama:type_name -> mycel.v1.ToolPresence
-	15, // 3: mycel.v1.Node.caps_ceiling:type_name -> mycel.v1.Capabilities
-	15, // 4: mycel.v1.Node.caps_enabled:type_name -> mycel.v1.Capabilities
+	20, // 3: mycel.v1.Node.caps_ceiling:type_name -> mycel.v1.Capabilities
+	20, // 4: mycel.v1.Node.caps_enabled:type_name -> mycel.v1.Capabilities
 	2,  // 5: mycel.v1.Node.inventory:type_name -> mycel.v1.Inventory
 	2,  // 6: mycel.v1.Heartbeat.inventory:type_name -> mycel.v1.Inventory
-	6,  // 7: mycel.v1.CtlRequest.ping:type_name -> mycel.v1.Ping
-	7,  // 8: mycel.v1.CtlRequest.revoked:type_name -> mycel.v1.Revoked
-	8,  // 9: mycel.v1.CtlRequest.set_caps:type_name -> mycel.v1.SetCaps
-	9,  // 10: mycel.v1.CtlRequest.shutdown:type_name -> mycel.v1.Shutdown
-	15, // 11: mycel.v1.SetCaps.caps_enabled:type_name -> mycel.v1.Capabilities
-	12, // [12:12] is the sub-list for method output_type
-	12, // [12:12] is the sub-list for method input_type
-	12, // [12:12] is the sub-list for extension type_name
-	12, // [12:12] is the sub-list for extension extendee
-	0,  // [0:12] is the sub-list for field type_name
+	7,  // 7: mycel.v1.CtlRequest.ping:type_name -> mycel.v1.Ping
+	8,  // 8: mycel.v1.CtlRequest.revoked:type_name -> mycel.v1.Revoked
+	9,  // 9: mycel.v1.CtlRequest.set_caps:type_name -> mycel.v1.SetCaps
+	10, // 10: mycel.v1.CtlRequest.shutdown:type_name -> mycel.v1.Shutdown
+	6,  // 11: mycel.v1.CtlRequest.agent:type_name -> mycel.v1.AgentCtl
+	20, // 12: mycel.v1.SetCaps.caps_enabled:type_name -> mycel.v1.Capabilities
+	21, // 13: mycel.v1.RegisterAgentRequest.budget:type_name -> mycel.v1.Budget
+	21, // 14: mycel.v1.AgentUsageResponse.agent_remaining:type_name -> mycel.v1.Budget
+	21, // 15: mycel.v1.AgentUsageResponse.channel_remaining:type_name -> mycel.v1.Budget
+	16, // [16:16] is the sub-list for method output_type
+	16, // [16:16] is the sub-list for method input_type
+	16, // [16:16] is the sub-list for extension type_name
+	16, // [16:16] is the sub-list for extension extendee
+	0,  // [0:16] is the sub-list for field type_name
 }
 
 func init() { file_mycel_v1_node_proto_init() }
@@ -1216,11 +1585,13 @@ func file_mycel_v1_node_proto_init() {
 		return
 	}
 	file_mycel_v1_common_proto_init()
+	file_mycel_v1_envelope_proto_init()
 	file_mycel_v1_node_proto_msgTypes[5].OneofWrappers = []any{
 		(*CtlRequest_Ping)(nil),
 		(*CtlRequest_Revoked)(nil),
 		(*CtlRequest_SetCaps)(nil),
 		(*CtlRequest_Shutdown)(nil),
+		(*CtlRequest_Agent)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -1228,7 +1599,7 @@ func file_mycel_v1_node_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_mycel_v1_node_proto_rawDesc), len(file_mycel_v1_node_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   15,
+			NumMessages:   20,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

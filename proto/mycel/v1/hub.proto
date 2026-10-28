@@ -5,6 +5,7 @@ package mycel.v1;
 import "mycel/v1/common.proto";
 import "mycel/v1/identity.proto";
 import "mycel/v1/node.proto";
+import "mycel/v1/envelope.proto";
 
 // ---- Tokens ----
 
@@ -139,6 +140,80 @@ message Agent {
   string state = 7; // running, paused, stopped
   string created_at = 8;
   string token_expires_at = 9;
+  // Phase 3
+  string parent = 10; // spawner agent id, empty for orchestrators
+  string home_channel = 11;
+  Budget budget = 12; // zero = unlimited
+  Budget used = 13;
+  int32 turns = 14;
+  string paused_reason = 15; // "budget: agent", "budget: channel", "kill switch", ""
+  string exited_at = 16;
+  int32 exit_code = 17;
+}
+
+message GetAgentRequest {
+  string id = 1;
+}
+
+message GetAgentResponse {
+  Agent agent = 1;
+}
+
+message SetAgentBudgetRequest {
+  string id = 1;
+  Budget budget = 2;
+}
+
+message SetAgentBudgetResponse {
+  Agent agent = 1;
+}
+
+// PauseAgent is kill-switch level one (spec: "Kill switch"); ResumeAgent
+// clears a pause set by a budget or by an operator.
+message PauseAgentRequest {
+  string id = 1;
+  string reason = 2;
+}
+
+message PauseAgentResponse {
+  Agent agent = 1;
+}
+
+message ResumeAgentRequest {
+  string id = 1;
+}
+
+message ResumeAgentResponse {
+  Agent agent = 1;
+}
+
+message StopAgentRequest {
+  string id = 1;
+}
+
+message StopAgentResponse {}
+
+message ChannelUsage {
+  string channel = 1;
+  Budget budget = 2;
+  Budget used = 3;
+  bool paused = 4; // channel budget exhausted: every agent with this home channel is paused
+}
+
+message GetChannelUsageRequest {
+  string channel = 1;
+}
+
+message GetChannelUsageResponse {
+  ChannelUsage usage = 1;
+}
+
+message ResetChannelUsageRequest {
+  string channel = 1;
+}
+
+message ResetChannelUsageResponse {
+  ChannelUsage usage = 1;
 }
 
 message ListAgentsRequest {}
@@ -156,4 +231,12 @@ message RevokeAgentResponse {}
 service AgentService {
   rpc ListAgents(ListAgentsRequest) returns (ListAgentsResponse);
   rpc RevokeAgent(RevokeAgentRequest) returns (RevokeAgentResponse);
+  // Phase 3
+  rpc GetAgent(GetAgentRequest) returns (GetAgentResponse);
+  rpc SetAgentBudget(SetAgentBudgetRequest) returns (SetAgentBudgetResponse);
+  rpc PauseAgent(PauseAgentRequest) returns (PauseAgentResponse);
+  rpc ResumeAgent(ResumeAgentRequest) returns (ResumeAgentResponse);
+  rpc StopAgent(StopAgentRequest) returns (StopAgentResponse);
+  rpc GetChannelUsage(GetChannelUsageRequest) returns (GetChannelUsageResponse);
+  rpc ResetChannelUsage(ResetChannelUsageRequest) returns (ResetChannelUsageResponse);
 }

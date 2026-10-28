@@ -12,6 +12,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	mycelv1 "github.com/richard-sen27/mycelium/gen/mycel/v1"
+	"github.com/richard-sen27/mycelium/gen/mycel/v1/mycelv1connect"
 	"github.com/richard-sen27/mycelium/internal/bus"
 	"github.com/richard-sen27/mycelium/internal/identity"
 	"github.com/richard-sen27/mycelium/internal/policy"
@@ -475,7 +476,13 @@ func (us *userService) Whoami(ctx context.Context, _ *connect.Request[mycelv1.Wh
 
 // ---- AgentService ----
 
-type agentService struct{ s *server }
+type agentService struct {
+	// Phase 3 methods (GetAgent, SetAgentBudget, PauseAgent, ResumeAgent,
+	// StopAgent, GetChannelUsage, ResetChannelUsage) answer Unimplemented
+	// until the phase 3 hub package lands.
+	mycelv1connect.UnimplementedAgentServiceHandler
+	s *server
+}
 
 func (as *agentService) ListAgents(ctx context.Context, _ *connect.Request[mycelv1.ListAgentsRequest]) (*connect.Response[mycelv1.ListAgentsResponse], error) {
 	s := as.s

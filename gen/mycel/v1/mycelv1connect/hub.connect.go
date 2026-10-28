@@ -72,6 +72,24 @@ const (
 	// AgentServiceRevokeAgentProcedure is the fully-qualified name of the AgentService's RevokeAgent
 	// RPC.
 	AgentServiceRevokeAgentProcedure = "/mycel.v1.AgentService/RevokeAgent"
+	// AgentServiceGetAgentProcedure is the fully-qualified name of the AgentService's GetAgent RPC.
+	AgentServiceGetAgentProcedure = "/mycel.v1.AgentService/GetAgent"
+	// AgentServiceSetAgentBudgetProcedure is the fully-qualified name of the AgentService's
+	// SetAgentBudget RPC.
+	AgentServiceSetAgentBudgetProcedure = "/mycel.v1.AgentService/SetAgentBudget"
+	// AgentServicePauseAgentProcedure is the fully-qualified name of the AgentService's PauseAgent RPC.
+	AgentServicePauseAgentProcedure = "/mycel.v1.AgentService/PauseAgent"
+	// AgentServiceResumeAgentProcedure is the fully-qualified name of the AgentService's ResumeAgent
+	// RPC.
+	AgentServiceResumeAgentProcedure = "/mycel.v1.AgentService/ResumeAgent"
+	// AgentServiceStopAgentProcedure is the fully-qualified name of the AgentService's StopAgent RPC.
+	AgentServiceStopAgentProcedure = "/mycel.v1.AgentService/StopAgent"
+	// AgentServiceGetChannelUsageProcedure is the fully-qualified name of the AgentService's
+	// GetChannelUsage RPC.
+	AgentServiceGetChannelUsageProcedure = "/mycel.v1.AgentService/GetChannelUsage"
+	// AgentServiceResetChannelUsageProcedure is the fully-qualified name of the AgentService's
+	// ResetChannelUsage RPC.
+	AgentServiceResetChannelUsageProcedure = "/mycel.v1.AgentService/ResetChannelUsage"
 )
 
 // TokenServiceClient is a client for the mycel.v1.TokenService service.
@@ -522,6 +540,14 @@ func (UnimplementedUserServiceHandler) Whoami(context.Context, *connect.Request[
 type AgentServiceClient interface {
 	ListAgents(context.Context, *connect.Request[v1.ListAgentsRequest]) (*connect.Response[v1.ListAgentsResponse], error)
 	RevokeAgent(context.Context, *connect.Request[v1.RevokeAgentRequest]) (*connect.Response[v1.RevokeAgentResponse], error)
+	// Phase 3
+	GetAgent(context.Context, *connect.Request[v1.GetAgentRequest]) (*connect.Response[v1.GetAgentResponse], error)
+	SetAgentBudget(context.Context, *connect.Request[v1.SetAgentBudgetRequest]) (*connect.Response[v1.SetAgentBudgetResponse], error)
+	PauseAgent(context.Context, *connect.Request[v1.PauseAgentRequest]) (*connect.Response[v1.PauseAgentResponse], error)
+	ResumeAgent(context.Context, *connect.Request[v1.ResumeAgentRequest]) (*connect.Response[v1.ResumeAgentResponse], error)
+	StopAgent(context.Context, *connect.Request[v1.StopAgentRequest]) (*connect.Response[v1.StopAgentResponse], error)
+	GetChannelUsage(context.Context, *connect.Request[v1.GetChannelUsageRequest]) (*connect.Response[v1.GetChannelUsageResponse], error)
+	ResetChannelUsage(context.Context, *connect.Request[v1.ResetChannelUsageRequest]) (*connect.Response[v1.ResetChannelUsageResponse], error)
 }
 
 // NewAgentServiceClient constructs a client for the mycel.v1.AgentService service. By default, it
@@ -547,13 +573,62 @@ func NewAgentServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(agentServiceMethods.ByName("RevokeAgent")),
 			connect.WithClientOptions(opts...),
 		),
+		getAgent: connect.NewClient[v1.GetAgentRequest, v1.GetAgentResponse](
+			httpClient,
+			baseURL+AgentServiceGetAgentProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("GetAgent")),
+			connect.WithClientOptions(opts...),
+		),
+		setAgentBudget: connect.NewClient[v1.SetAgentBudgetRequest, v1.SetAgentBudgetResponse](
+			httpClient,
+			baseURL+AgentServiceSetAgentBudgetProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("SetAgentBudget")),
+			connect.WithClientOptions(opts...),
+		),
+		pauseAgent: connect.NewClient[v1.PauseAgentRequest, v1.PauseAgentResponse](
+			httpClient,
+			baseURL+AgentServicePauseAgentProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("PauseAgent")),
+			connect.WithClientOptions(opts...),
+		),
+		resumeAgent: connect.NewClient[v1.ResumeAgentRequest, v1.ResumeAgentResponse](
+			httpClient,
+			baseURL+AgentServiceResumeAgentProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("ResumeAgent")),
+			connect.WithClientOptions(opts...),
+		),
+		stopAgent: connect.NewClient[v1.StopAgentRequest, v1.StopAgentResponse](
+			httpClient,
+			baseURL+AgentServiceStopAgentProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("StopAgent")),
+			connect.WithClientOptions(opts...),
+		),
+		getChannelUsage: connect.NewClient[v1.GetChannelUsageRequest, v1.GetChannelUsageResponse](
+			httpClient,
+			baseURL+AgentServiceGetChannelUsageProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("GetChannelUsage")),
+			connect.WithClientOptions(opts...),
+		),
+		resetChannelUsage: connect.NewClient[v1.ResetChannelUsageRequest, v1.ResetChannelUsageResponse](
+			httpClient,
+			baseURL+AgentServiceResetChannelUsageProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("ResetChannelUsage")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // agentServiceClient implements AgentServiceClient.
 type agentServiceClient struct {
-	listAgents  *connect.Client[v1.ListAgentsRequest, v1.ListAgentsResponse]
-	revokeAgent *connect.Client[v1.RevokeAgentRequest, v1.RevokeAgentResponse]
+	listAgents        *connect.Client[v1.ListAgentsRequest, v1.ListAgentsResponse]
+	revokeAgent       *connect.Client[v1.RevokeAgentRequest, v1.RevokeAgentResponse]
+	getAgent          *connect.Client[v1.GetAgentRequest, v1.GetAgentResponse]
+	setAgentBudget    *connect.Client[v1.SetAgentBudgetRequest, v1.SetAgentBudgetResponse]
+	pauseAgent        *connect.Client[v1.PauseAgentRequest, v1.PauseAgentResponse]
+	resumeAgent       *connect.Client[v1.ResumeAgentRequest, v1.ResumeAgentResponse]
+	stopAgent         *connect.Client[v1.StopAgentRequest, v1.StopAgentResponse]
+	getChannelUsage   *connect.Client[v1.GetChannelUsageRequest, v1.GetChannelUsageResponse]
+	resetChannelUsage *connect.Client[v1.ResetChannelUsageRequest, v1.ResetChannelUsageResponse]
 }
 
 // ListAgents calls mycel.v1.AgentService.ListAgents.
@@ -566,10 +641,53 @@ func (c *agentServiceClient) RevokeAgent(ctx context.Context, req *connect.Reque
 	return c.revokeAgent.CallUnary(ctx, req)
 }
 
+// GetAgent calls mycel.v1.AgentService.GetAgent.
+func (c *agentServiceClient) GetAgent(ctx context.Context, req *connect.Request[v1.GetAgentRequest]) (*connect.Response[v1.GetAgentResponse], error) {
+	return c.getAgent.CallUnary(ctx, req)
+}
+
+// SetAgentBudget calls mycel.v1.AgentService.SetAgentBudget.
+func (c *agentServiceClient) SetAgentBudget(ctx context.Context, req *connect.Request[v1.SetAgentBudgetRequest]) (*connect.Response[v1.SetAgentBudgetResponse], error) {
+	return c.setAgentBudget.CallUnary(ctx, req)
+}
+
+// PauseAgent calls mycel.v1.AgentService.PauseAgent.
+func (c *agentServiceClient) PauseAgent(ctx context.Context, req *connect.Request[v1.PauseAgentRequest]) (*connect.Response[v1.PauseAgentResponse], error) {
+	return c.pauseAgent.CallUnary(ctx, req)
+}
+
+// ResumeAgent calls mycel.v1.AgentService.ResumeAgent.
+func (c *agentServiceClient) ResumeAgent(ctx context.Context, req *connect.Request[v1.ResumeAgentRequest]) (*connect.Response[v1.ResumeAgentResponse], error) {
+	return c.resumeAgent.CallUnary(ctx, req)
+}
+
+// StopAgent calls mycel.v1.AgentService.StopAgent.
+func (c *agentServiceClient) StopAgent(ctx context.Context, req *connect.Request[v1.StopAgentRequest]) (*connect.Response[v1.StopAgentResponse], error) {
+	return c.stopAgent.CallUnary(ctx, req)
+}
+
+// GetChannelUsage calls mycel.v1.AgentService.GetChannelUsage.
+func (c *agentServiceClient) GetChannelUsage(ctx context.Context, req *connect.Request[v1.GetChannelUsageRequest]) (*connect.Response[v1.GetChannelUsageResponse], error) {
+	return c.getChannelUsage.CallUnary(ctx, req)
+}
+
+// ResetChannelUsage calls mycel.v1.AgentService.ResetChannelUsage.
+func (c *agentServiceClient) ResetChannelUsage(ctx context.Context, req *connect.Request[v1.ResetChannelUsageRequest]) (*connect.Response[v1.ResetChannelUsageResponse], error) {
+	return c.resetChannelUsage.CallUnary(ctx, req)
+}
+
 // AgentServiceHandler is an implementation of the mycel.v1.AgentService service.
 type AgentServiceHandler interface {
 	ListAgents(context.Context, *connect.Request[v1.ListAgentsRequest]) (*connect.Response[v1.ListAgentsResponse], error)
 	RevokeAgent(context.Context, *connect.Request[v1.RevokeAgentRequest]) (*connect.Response[v1.RevokeAgentResponse], error)
+	// Phase 3
+	GetAgent(context.Context, *connect.Request[v1.GetAgentRequest]) (*connect.Response[v1.GetAgentResponse], error)
+	SetAgentBudget(context.Context, *connect.Request[v1.SetAgentBudgetRequest]) (*connect.Response[v1.SetAgentBudgetResponse], error)
+	PauseAgent(context.Context, *connect.Request[v1.PauseAgentRequest]) (*connect.Response[v1.PauseAgentResponse], error)
+	ResumeAgent(context.Context, *connect.Request[v1.ResumeAgentRequest]) (*connect.Response[v1.ResumeAgentResponse], error)
+	StopAgent(context.Context, *connect.Request[v1.StopAgentRequest]) (*connect.Response[v1.StopAgentResponse], error)
+	GetChannelUsage(context.Context, *connect.Request[v1.GetChannelUsageRequest]) (*connect.Response[v1.GetChannelUsageResponse], error)
+	ResetChannelUsage(context.Context, *connect.Request[v1.ResetChannelUsageRequest]) (*connect.Response[v1.ResetChannelUsageResponse], error)
 }
 
 // NewAgentServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -591,12 +709,68 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 		connect.WithSchema(agentServiceMethods.ByName("RevokeAgent")),
 		connect.WithHandlerOptions(opts...),
 	)
+	agentServiceGetAgentHandler := connect.NewUnaryHandler(
+		AgentServiceGetAgentProcedure,
+		svc.GetAgent,
+		connect.WithSchema(agentServiceMethods.ByName("GetAgent")),
+		connect.WithHandlerOptions(opts...),
+	)
+	agentServiceSetAgentBudgetHandler := connect.NewUnaryHandler(
+		AgentServiceSetAgentBudgetProcedure,
+		svc.SetAgentBudget,
+		connect.WithSchema(agentServiceMethods.ByName("SetAgentBudget")),
+		connect.WithHandlerOptions(opts...),
+	)
+	agentServicePauseAgentHandler := connect.NewUnaryHandler(
+		AgentServicePauseAgentProcedure,
+		svc.PauseAgent,
+		connect.WithSchema(agentServiceMethods.ByName("PauseAgent")),
+		connect.WithHandlerOptions(opts...),
+	)
+	agentServiceResumeAgentHandler := connect.NewUnaryHandler(
+		AgentServiceResumeAgentProcedure,
+		svc.ResumeAgent,
+		connect.WithSchema(agentServiceMethods.ByName("ResumeAgent")),
+		connect.WithHandlerOptions(opts...),
+	)
+	agentServiceStopAgentHandler := connect.NewUnaryHandler(
+		AgentServiceStopAgentProcedure,
+		svc.StopAgent,
+		connect.WithSchema(agentServiceMethods.ByName("StopAgent")),
+		connect.WithHandlerOptions(opts...),
+	)
+	agentServiceGetChannelUsageHandler := connect.NewUnaryHandler(
+		AgentServiceGetChannelUsageProcedure,
+		svc.GetChannelUsage,
+		connect.WithSchema(agentServiceMethods.ByName("GetChannelUsage")),
+		connect.WithHandlerOptions(opts...),
+	)
+	agentServiceResetChannelUsageHandler := connect.NewUnaryHandler(
+		AgentServiceResetChannelUsageProcedure,
+		svc.ResetChannelUsage,
+		connect.WithSchema(agentServiceMethods.ByName("ResetChannelUsage")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/mycel.v1.AgentService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case AgentServiceListAgentsProcedure:
 			agentServiceListAgentsHandler.ServeHTTP(w, r)
 		case AgentServiceRevokeAgentProcedure:
 			agentServiceRevokeAgentHandler.ServeHTTP(w, r)
+		case AgentServiceGetAgentProcedure:
+			agentServiceGetAgentHandler.ServeHTTP(w, r)
+		case AgentServiceSetAgentBudgetProcedure:
+			agentServiceSetAgentBudgetHandler.ServeHTTP(w, r)
+		case AgentServicePauseAgentProcedure:
+			agentServicePauseAgentHandler.ServeHTTP(w, r)
+		case AgentServiceResumeAgentProcedure:
+			agentServiceResumeAgentHandler.ServeHTTP(w, r)
+		case AgentServiceStopAgentProcedure:
+			agentServiceStopAgentHandler.ServeHTTP(w, r)
+		case AgentServiceGetChannelUsageProcedure:
+			agentServiceGetChannelUsageHandler.ServeHTTP(w, r)
+		case AgentServiceResetChannelUsageProcedure:
+			agentServiceResetChannelUsageHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -612,4 +786,32 @@ func (UnimplementedAgentServiceHandler) ListAgents(context.Context, *connect.Req
 
 func (UnimplementedAgentServiceHandler) RevokeAgent(context.Context, *connect.Request[v1.RevokeAgentRequest]) (*connect.Response[v1.RevokeAgentResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("mycel.v1.AgentService.RevokeAgent is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) GetAgent(context.Context, *connect.Request[v1.GetAgentRequest]) (*connect.Response[v1.GetAgentResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("mycel.v1.AgentService.GetAgent is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) SetAgentBudget(context.Context, *connect.Request[v1.SetAgentBudgetRequest]) (*connect.Response[v1.SetAgentBudgetResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("mycel.v1.AgentService.SetAgentBudget is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) PauseAgent(context.Context, *connect.Request[v1.PauseAgentRequest]) (*connect.Response[v1.PauseAgentResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("mycel.v1.AgentService.PauseAgent is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) ResumeAgent(context.Context, *connect.Request[v1.ResumeAgentRequest]) (*connect.Response[v1.ResumeAgentResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("mycel.v1.AgentService.ResumeAgent is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) StopAgent(context.Context, *connect.Request[v1.StopAgentRequest]) (*connect.Response[v1.StopAgentResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("mycel.v1.AgentService.StopAgent is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) GetChannelUsage(context.Context, *connect.Request[v1.GetChannelUsageRequest]) (*connect.Response[v1.GetChannelUsageResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("mycel.v1.AgentService.GetChannelUsage is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) ResetChannelUsage(context.Context, *connect.Request[v1.ResetChannelUsageRequest]) (*connect.Response[v1.ResetChannelUsageResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("mycel.v1.AgentService.ResetChannelUsage is not implemented"))
 }

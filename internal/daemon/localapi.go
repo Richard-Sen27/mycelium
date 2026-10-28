@@ -41,6 +41,29 @@ package daemon
 //	       not connected (except inbox.pull with wait, which waits up to
 //	       wait_ms for the connection).
 //
+// Phase 3: local workers (spawn_agent with target self).
+//
+//	POST   /api/local/agents/{session}/spawn
+//	       {"harness":"claude-code","name":"w1"?,"task":"...","channel":"#task-x",
+//	        "profile":"trusted-host","workdir":"..."?,"max_turns":30?,
+//	        "budget":{"tokens":0,"usd":0}?,"env":{...}?}
+//	       -> 201 {"agent_id":"agent:w1@<node>","worker":"agent:w1@<node>"}
+//	       Only profile "trusted-host" in phase 3 (anything else -> 400 "sandboxed
+//	       workers arrive with phase 4"). The daemon registers the worker with
+//	       the hub (RegisterAgentRequest.parent = the session's agent,
+//	       home_channel, budget, workdir), writes the worker's MCP config under
+//	       <NodeDir>/workers/<name>/mcp.json, renders the harness manifest's
+//	       prompt template, starts the harness process from the manifest's
+//	       spawn section with the worker's own `mycel mcp` session, parses its
+//	       stdout for usage (manifest `usage` parser) and reports increments
+//	       with bus.RPCAgentUsage, reports bus.RPCAgentExited when it ends,
+//	       and applies AgentCtl pause/resume/stop from the hub (pause =
+//	       SIGSTOP on unix, best effort on windows, plus refusing the worker's
+//	       local RPCs; stop = kill). At most 8 running workers per node.
+//	       A name is generated as <parent name>-w<N> when omitted.
+//	GET    /api/local/workers -> {"workers":[{"agent_id","parent","harness","state","pid","started_at","exited_at","exit_code","usage":{"tokens","usd","turns"}}]}
+//	DELETE /api/local/workers/{agent}  -> 204 (stops it); only the spawning session or the local UI token
+//
 // Every local request is logged at debug; agent tokens never appear in logs.
 
 // LocalTokenFile is the local sign-in token file name under NodeDir.

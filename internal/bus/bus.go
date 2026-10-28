@@ -85,6 +85,11 @@ const (
 	RPCAgentBBGet        = "agent.bb.get"        // AgentBlackboardGetRequest -> BlackboardGetResponse
 	RPCAgentBBPut        = "agent.bb.put"        // AgentBlackboardPutRequest -> BlackboardPutResponse
 	RPCAgentListMessages = "agent.messages.list" // AgentListMessagesRequest -> ListMessagesResponse
+
+	// Phase 3: node-originated lifecycle reports for local workers (no agent
+	// token; the node vouches for agents it registered).
+	RPCAgentUsage  = "agent.usage"  // AgentUsageRequest -> AgentUsageResponse
+	RPCAgentExited = "agent.exited" // AgentExitedRequest -> AgentExitedResponse
 )
 
 // StatusHeader is set on every RPC reply from the hub: "ok" or "error". On

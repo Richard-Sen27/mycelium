@@ -18,9 +18,26 @@ Covered:
 Not covered yet:
 
 - Hardware-backed node keys (Secure Enclave, TPM): planned behind the identity API.
+- On Windows, file modes are not applied; `local.token`, keys and the hub database rely on the ACL of the per-user config and data directories.
 - Passkeys for humans: phase 6.
 - Rate limiting of the enrol endpoint is a simple per-IP token bucket; there is no global limit yet.
 - Revoking an agent takes effect at its next token refresh: an already issued agent token stays cryptographically valid until it expires (at most one hour). Removing a node drops its bus connection immediately, which is what carries agent traffic.
 - Audit, revoked-serial and issued-certificate tables are not pruned beyond expired serials at startup.
 - An individual API key cannot be revoked yet; removing the user revokes all of their keys (a `RevokeApiKey` RPC comes with the phase 2 contracts).
 - Hub TLS certificates from Let's Encrypt: phase 7. Until then the hub serves a CA-signed server certificate and clients pin the CA.
+
+## Phase 2
+
+Covered:
+
+- Sender identity, sequence, timestamp, hop and provenance on every message are stamped by the hub; agent-originated content is marked untrusted and adapters hand it to harnesses as quoted data with header fields sanitised so a message cannot close its own quote.
+- Agent tokens are verified on every RPC and bound to the node connection in the subject; a token from another node is refused.
+- Membership and policy checks on every read and write; direct channels are visible only to their participants and to admins (audited).
+- Loop and cost controls: hop count along the reply chain with a per-thread limit, rate limits per sender and channel and per agent overall, caps on channels, blackboard size, long polls and RPC concurrency per node, Watch streams per user.
+
+Not covered yet:
+
+- A loop can restart by posting in the same thread without `reply_to` (hop returns to zero); only the rate limits bound it. Budgets (phase 3) add a cost ceiling.
+- Human messages from other team members carry `untrusted: false`; the adapter shows the sender so a harness can tell owners apart, but there is no consent step before another member adds your agent to a channel or messages it.
+- Audit rows for refused requests are sampled per actor; the audit table and streams are not pruned.
+

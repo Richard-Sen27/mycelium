@@ -75,6 +75,16 @@ const (
 	ActionChannelRead         = Action("channel.read")
 	ActionBlackboardRead      = Action("bb.read")
 	ActionBlackboardWrite     = Action("bb.write")
+
+	// Phase 3: agent lifecycle and budgets. Resource.Kind "agent" with the
+	// agent's owner, or "channel" for channel usage.
+	ActionAgentGet          = Action("agent.get")
+	ActionAgentSetBudget    = Action("agent.budget.set")
+	ActionAgentPause        = Action("agent.pause")
+	ActionAgentResume       = Action("agent.resume")
+	ActionAgentStop         = Action("agent.stop")
+	ActionChannelUsageGet   = Action("channel.usage.get")
+	ActionChannelUsageReset = Action("channel.usage.reset")
 )
 
 // Resource is what the action targets. Kind is "token", "node", "user",
@@ -115,6 +125,10 @@ type Policy interface {
 //     channel is open to members); create task channels (name prefix
 //     "#task-"); add members to task channels they created
 //     (Principal.Creator true);
+//   - agent lifecycle (phase 3): admins everything; members get, set the
+//     budget of, pause, resume and stop agents they own, and get or reset
+//     usage of channels they own; agents nothing (spawning and stopping
+//     one's own workers happens on the node, not through this interface);
 //   - anything else is denied.
 func Default() Policy { return defaultPolicy{} }
 

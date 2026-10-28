@@ -3,6 +3,7 @@ syntax = "proto3";
 package mycel.v1;
 
 import "mycel/v1/common.proto";
+import "mycel/v1/envelope.proto";
 
 message Gpu {
   int32 index = 1;
@@ -69,7 +70,17 @@ message CtlRequest {
     Revoked revoked = 2; // the node must stop and forget its identity
     SetCaps set_caps = 3;
     Shutdown shutdown = 4;
+    AgentCtl agent = 5; // phase 3: pause, resume or stop one local agent
   }
+}
+
+// AgentCtl is sent by the hub when an agent is paused (budget exhausted,
+// kill switch), resumed or stopped. The node applies it to the local worker
+// process and to the agent's local session.
+message AgentCtl {
+  string agent_id = 1;
+  string action = 2; // "pause", "resume", "stop"
+  string reason = 3;
 }
 
 message Ping {}
@@ -99,7 +110,35 @@ message RegisterAgentRequest {
   string agent_name = 1;
   string sandbox_id = 2; // empty for trusted-host agents
   string harness = 3;
+  // Phase 3: set when the agent was spawned by another agent on this node.
+  string parent = 4; // "agent:<name>@<node>" of the spawner, empty for orchestrators
+  string home_channel = 5; // channel the worker was spawned for; its usage counts there
+  Budget budget = 6; // per-agent ceiling; zero = unlimited
+  string workdir = 7; // informational
 }
+
+// Phase 3: usage and lifecycle reports from the node (node.<n>.rpc.agent.usage / agent.exited).
+
+message AgentUsageRequest {
+  string agent_id = 1;
+  int64 tokens = 2; // increment since the last report
+  double usd = 3; // increment since the last report
+  int32 turns = 4; // increment
+}
+
+message AgentUsageResponse {
+  Budget agent_remaining = 1; // negative numbers mean exhausted
+  Budget channel_remaining = 2;
+  bool paused = 3; // the hub paused the agent (budget exhausted or kill switch)
+}
+
+message AgentExitedRequest {
+  string agent_id = 1;
+  int32 exit_code = 2;
+  string reason = 3; // "finished", "killed", "error: ...", "stopped"
+}
+
+message AgentExitedResponse {}
 
 message RegisterAgentResponse {
   string agent_id = 1; // "agent:<name>@<node>"

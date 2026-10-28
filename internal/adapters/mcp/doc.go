@@ -25,6 +25,14 @@
 //	blackboard_put(channel, key, value, expect_version?)
 //	                                            -> the stored entry
 //
+// Phase 3 (orchestrator sessions, target self):
+//
+//	spawn_agent(harness, task, channel, name?, profile?, max_turns?, budget_tokens?, budget_usd?, workdir?)
+//	                                            -> "spawned agent:<name>@<node> in #…" ; profile defaults to
+//	                                               trusted-host (the only one in phase 3)
+//	list_workers()                              -> the caller's workers with state and usage
+//	stop_agent(agent_id)                        -> stops one of the caller's workers
+//
 // Every message handed to the harness is wrapped by channels.QuoteForAgent so
 // it reads as quoted, untrusted data (spec: prompt injection between agents).
 // Tool errors are returned as MCP tool errors with the hub's message; the
