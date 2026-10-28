@@ -75,6 +75,21 @@ package daemon
 //	GET    /api/local/agents/{session}/artifacts/{id} -> bytes (hub GET with
 //	       the node certificate; the hub applies the agent's visibility).
 //
+// Phase 5: the node owner's local controls ("This machine": restrict only).
+//
+//	GET    /api/local/sharing   -> {"hub": SharingSettings, "local": SharingSettings, "effective": SharingSettings}
+//	PUT    /api/local/sharing   body SharingSettings -> the new effective settings. The
+//	       local settings are a ceiling: a PUT may only tighten relative to the
+//	       hub-side settings (fewer offers, narrower windows, idle-only, lower
+//	       max_jobs, local_first on); anything wider -> 400. Stored in
+//	       <NodeDir>/sharing.yaml and enforced by the brokers and the job
+//	       runner even while the hub is unreachable; reported to the hub with
+//	       node.sharing.
+//	GET    /api/local/grants    -> grants currently attached on this node
+//	DELETE /api/local/grants/{id} -> revoke locally (broker detaches at once; the
+//	       hub is told with grant.revoked and marks it REVOKED by "node:<name>")
+//	GET    /api/local/freeze    -> {"frozen": bool, "scope": "...", "reason": "..."}
+//
 // Every local request is logged at debug; agent tokens never appear in logs.
 
 // LocalTokenFile is the local sign-in token file name under NodeDir.

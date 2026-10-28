@@ -1,0 +1,310 @@
+syntax = "proto3";
+
+package mycel.v1;
+
+import "mycel/v1/channel.proto";
+import "mycel/v1/common.proto";
+
+// ---- Grants (spec: "Grant", "Resource brokers", "Runtime escalation", "Approvals") ----
+
+enum GrantState {
+  GRANT_STATE_UNSPECIFIED = 0;
+  GRANT_STATE_PENDING = 1; // waiting for an approval
+  GRANT_STATE_ACTIVE = 2; // attached on the node until expires_at
+  GRANT_STATE_EXPIRED = 3;
+  GRANT_STATE_REVOKED = 4; // by the hub, an operator or the node owner
+  GRANT_STATE_DENIED = 5;
+}
+
+// OllamaGrant exposes the node's Ollama (or any OpenAI-compatible endpoint)
+// through the broker at http://ollama.mycel.internal.
+message OllamaGrant {
+  repeated string models = 1; // allowlist; empty = every model already present
+  bool allow_pull = 2;
+  bool allow_delete = 3;
+  int32 requests_per_minute = 4; // 0 = broker default (60)
+  int64 max_tokens = 5; // total generated tokens; 0 = unlimited
+}
+
+// GpuGrant leases one device (or MIG slice) for a duration.
+message GpuGrant {
+  int32 device = 1; // index from Inventory.gpus
+  string mig_slice = 2; // optional MIG profile/UUID
+  bool exclusive = 3; // false = time-sliced
+}
+
+// DockerHostGrant exposes a filtered host Docker API socket.
+message DockerHostGrant {
+  repeated string images = 1; // allowed image references or registry prefixes
+  bool gpu = 2; // containers may use the device(s) of an active GPU grant
+  int32 cpus = 3;
+  int64 memory_bytes = 4;
+}
+
+message MountGrant {
+  string host_path = 1;
+  string guest_path = 2;
+  bool read_only = 3;
+}
+
+message EgressGrant {
+  repeated string allow = 1; // additional host rules
+}
+
+message GrantSpec {
+  oneof kind {
+    OllamaGrant ollama = 1;
+    GpuGrant gpu = 2;
+    DockerHostGrant docker_host = 3;
+    MountGrant mount = 4;
+    EgressGrant egress = 5;
+  }
+}
+
+message Grant {
+  string id = 1; // grt_<ULID>
+  GrantSpec spec = 2;
+  // subject is who holds the grant: "agent:<name>@<node>" (trusted-host agent
+  // or sandboxed agent) or "job:<id>". The grant attaches to that subject's
+  // sandbox on `node`; trusted-host agents reach brokers on their own node.
+  string subject = 3;
+  string node = 4;
+  string owner_id = 5; // the subject's owner
+  string requested_by = 6; // agent id or user id
+  string reason = 7; // free text from the requester
+  string duration = 8; // requested Go duration
+  GrantState state = 9;
+  string created_at = 10;
+  string activated_at = 11;
+  string expires_at = 12;
+  string decided_by = 13; // user id for approve/deny, "policy" for auto-grants, "node:<name>" for local revokes
+  string decision_note = 14;
+  string channel = 15; // channel the request was made from (policy context)
+  bool requires_approval = 16;
+}
+
+// SharingSettings are what a node offers (spec: "Sharing settings per node").
+// The hub holds the owner's settings within the token ceiling; the node keeps
+// a local copy that may only tighten them and that it enforces even while the
+// hub is unreachable.
+message SharingSettings {
+  Capabilities offer = 1; // docker, ollama, gpu, sandbox
+  string when = 2; // "always", "idle", "schedule"
+  repeated ScheduleWindow schedule = 3; // used when when == "schedule"
+  bool local_first = 4; // throttle/pause remote sandboxes while the owner is active
+  int32 max_jobs = 5; // concurrent remote jobs; 0 = default
+  int32 idle_after_minutes = 6; // for "idle"; default 10
+}
+
+message ScheduleWindow {
+  repeated string days = 1; // "mon".."sun"
+  string from = 2; // "22:00" local time
+  string to = 3; // "07:00"
+}
+
+// ---- Human API ----
+
+message RequestGrantRequest {
+  GrantSpec spec = 1;
+  string subject = 2; // "agent:…" or "job:…" the caller owns, or empty = the caller's agentless use is not allowed
+  string duration = 3; // default 1h, max 24h
+  string reason = 4;
+  string channel = 5;
+}
+
+message RequestGrantResponse {
+  Grant grant = 1;
+}
+
+message ListGrantsRequest {
+  bool pending_only = 1;
+  string node = 2;
+  string subject = 3;
+  bool include_finished = 4;
+}
+
+message ListGrantsResponse {
+  repeated Grant grants = 1;
+}
+
+message GetGrantRequest {
+  string id = 1;
+}
+
+message GetGrantResponse {
+  Grant grant = 1;
+}
+
+message ApproveGrantRequest {
+  string id = 1;
+  string duration = 2; // optional override, may only shorten
+  string note = 3;
+}
+
+message ApproveGrantResponse {
+  Grant grant = 1;
+}
+
+message DenyGrantRequest {
+  string id = 1;
+  string note = 2;
+}
+
+message DenyGrantResponse {
+  Grant grant = 1;
+}
+
+message RevokeGrantRequest {
+  string id = 1;
+  string note = 2;
+}
+
+message RevokeGrantResponse {
+  Grant grant = 1;
+}
+
+service GrantService {
+  rpc RequestGrant(RequestGrantRequest) returns (RequestGrantResponse);
+  rpc ListGrants(ListGrantsRequest) returns (ListGrantsResponse);
+  rpc GetGrant(GetGrantRequest) returns (GetGrantResponse);
+  rpc ApproveGrant(ApproveGrantRequest) returns (ApproveGrantResponse);
+  rpc DenyGrant(DenyGrantRequest) returns (DenyGrantResponse);
+  rpc RevokeGrant(RevokeGrantRequest) returns (RevokeGrantResponse);
+}
+
+message GetNodeSharingRequest {
+  string name = 1;
+}
+
+message GetNodeSharingResponse {
+  SharingSettings hub = 1; // owner's settings on the hub
+  SharingSettings local = 2; // last reported local ceiling from the node
+  SharingSettings effective = 3; // min of both
+}
+
+message SetNodeSharingRequest {
+  string name = 1;
+  SharingSettings settings = 2; // must stay within the join token's capability ceiling
+}
+
+message SetNodeSharingResponse {
+  GetNodeSharingResponse sharing = 1;
+}
+
+// Kill switch (spec: three levels). PauseAgent/ResumeAgent in AgentService
+// are level one.
+message FreezeChannelRequest {
+  string channel = 1;
+  string reason = 2;
+}
+
+message FreezeChannelResponse {}
+
+message UnfreezeChannelRequest {
+  string channel = 1;
+}
+
+message UnfreezeChannelResponse {}
+
+message FreezeAllRequest {
+  string reason = 1;
+}
+
+message FreezeAllResponse {}
+
+message UnfreezeAllRequest {}
+
+message UnfreezeAllResponse {}
+
+message FreezeStatusRequest {}
+
+message FreezeStatusResponse {
+  bool all_frozen = 1;
+  string all_reason = 2;
+  string all_since = 3;
+  string all_by = 4;
+  repeated string frozen_channels = 5;
+}
+
+service ControlService {
+  rpc GetNodeSharing(GetNodeSharingRequest) returns (GetNodeSharingResponse);
+  rpc SetNodeSharing(SetNodeSharingRequest) returns (SetNodeSharingResponse);
+  rpc FreezeChannel(FreezeChannelRequest) returns (FreezeChannelResponse);
+  rpc UnfreezeChannel(UnfreezeChannelRequest) returns (UnfreezeChannelResponse);
+  rpc FreezeAll(FreezeAllRequest) returns (FreezeAllResponse);
+  rpc UnfreezeAll(UnfreezeAllRequest) returns (UnfreezeAllResponse);
+  rpc FreezeStatus(FreezeStatusRequest) returns (FreezeStatusResponse);
+}
+
+// ---- Agent RPCs (node.<name>.rpc.agent.grant.*) ----
+
+message AgentRequestGrantRequest {
+  AgentCall call = 1;
+  GrantSpec spec = 2;
+  string duration = 3;
+  string reason = 4;
+  string channel = 5; // the channel the agent is working in (policy context)
+}
+
+message AgentListGrantsRequest {
+  AgentCall call = 1;
+}
+
+// ---- Node control and RPCs ----
+
+// AttachGrant is sent by the hub on node.<name>.ctl when a grant becomes
+// active; the node's broker attaches it to the subject's sandbox (or to the
+// trusted-host agent's broker session).
+message AttachGrant {
+  Grant grant = 1;
+}
+
+message DetachGrant {
+  string grant_id = 1;
+  string reason = 2; // "expired", "revoked", "denied"
+}
+
+// Freeze pauses every sandbox and worker on the node and makes every broker
+// deny; Unfreeze reverses it. Scope "all" or "channel:<name>" (pause only
+// agents whose home channel matches).
+message Freeze {
+  string scope = 1;
+  string reason = 2;
+}
+
+message Unfreeze {
+  string scope = 1;
+}
+
+// GrantRevokedRequest is sent by the node when the owner revoked a grant
+// locally or the node's ceiling rejected it (node.<name>.rpc.grant.revoked).
+message GrantRevokedRequest {
+  string grant_id = 1;
+  string reason = 2;
+}
+
+message GrantRevokedResponse {}
+
+// BrokerUsageRequest reports broker usage per subject (node.<name>.rpc.broker.usage).
+message BrokerUsageRequest {
+  string grant_id = 1;
+  string subject = 2;
+  string broker = 3; // ollama, gpu, docker-host
+  int64 tokens = 4; // ollama generated tokens (increment)
+  int64 requests = 5; // increment
+  int64 gpu_seconds = 6; // increment
+  string model = 7;
+}
+
+message BrokerUsageResponse {
+  bool deny = 1; // the hub wants the broker to stop serving this grant (budget, freeze)
+}
+
+// NodeSharingRequest reports the node's local ceiling (node.<name>.rpc.node.sharing).
+message NodeSharingRequest {
+  SharingSettings local = 1;
+}
+
+message NodeSharingResponse {
+  SharingSettings hub = 1; // the owner's hub-side settings, so the node can compute the effective set
+}

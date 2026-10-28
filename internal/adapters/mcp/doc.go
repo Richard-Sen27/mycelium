@@ -46,6 +46,16 @@
 //	fetch_artifact(id, path)                    -> downloads an artifact to a local path under the working directory
 //	list_artifacts(job_id?, channel?)
 //
+// Phase 5 (grants):
+//
+//	request_grant(resource, duration?, reason?, ...)
+//	    resource is one of: {"kind":"ollama","models":[...],"allow_pull":false}, {"kind":"gpu","device":0,"exclusive":true},
+//	    {"kind":"docker-host","images":[...]}, {"kind":"mount","host_path":"...","guest_path":"...","read_only":true},
+//	    {"kind":"egress","allow":[...]}; duration default "1h"
+//	    -> "grant grt_… active until …" or "grant grt_… pending approval" (the decision arrives as an
+//	       approval_decision message in the agent's inbox)
+//	list_grants()                               -> the caller's grants with state and expiry
+//
 // Every message handed to the harness is wrapped by channels.QuoteForAgent so
 // it reads as quoted, untrusted data (spec: prompt injection between agents).
 // Tool errors are returned as MCP tool errors with the hub's message; the

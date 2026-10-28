@@ -100,7 +100,58 @@ const (
 	ActionArtifactDelete = Action("artifact.delete")
 	ActionProfileList    = Action("profile.list")
 	ActionProfileSet     = Action("profile.set")
+
+	// Phase 5: grants, sharing, kill switch. Resource.Kind "grant" (owner =
+	// the subject's owner), "node" for sharing, "channel" for freezes.
+	ActionGrantRequest    = Action("grant.request")
+	ActionGrantList       = Action("grant.list")
+	ActionGrantGet        = Action("grant.get")
+	ActionGrantApprove    = Action("grant.approve")
+	ActionGrantDeny       = Action("grant.deny")
+	ActionGrantRevoke     = Action("grant.revoke")
+	ActionNodeSharingGet  = Action("node.sharing.get")
+	ActionNodeSharingSet  = Action("node.sharing.set")
+	ActionChannelFreeze   = Action("channel.freeze")
+	ActionChannelUnfreeze = Action("channel.unfreeze")
+	ActionFreezeAll       = Action("freeze.all")
+	ActionUnfreezeAll     = Action("unfreeze.all")
+	ActionFreezeStatus    = Action("freeze.status")
 )
+
+// GrantRule is one auto-approval rule (spec example: "agents in
+// #training-runs may lease one GPU on gpu-box for up to 4 hours without
+// approval; anything else needs the owner"). Rules are evaluated by the
+// Policy implementation for every grant request; the first match wins and
+// a request matching no rule requires approval. They are loaded from the
+// hub's configuration (hub.yaml `grants.auto`).
+type GrantRule struct {
+	Channel  string // "#training-runs" or "*" for any
+	Kind     string // ollama, gpu, docker-host, mount, egress or "*"
+	Node     string // node name or "*"
+	MaxTTL   string // Go duration, e.g. "4h"
+	MaxCount int    // concurrent active grants of this kind per subject; 0 = 1
+	ReadOnly bool   // mounts: only read-only mounts match
+}
+
+// GrantDecider decides whether a grant request needs approval. The default
+// policy implements it; the hub calls it after Authorize.
+type GrantDecider interface {
+	// NeedsApproval returns false (and the allowed TTL) when a rule
+	// auto-grants the request. ctxInfo carries the channel, kind, node, the
+	// requested TTL and the subject's active grants of that kind.
+	NeedsApproval(req GrantRequestInfo) (needs bool, ttl string, rule *GrantRule)
+}
+
+// GrantRequestInfo is the context a GrantDecider sees.
+type GrantRequestInfo struct {
+	Channel       string
+	Kind          string
+	Node          string
+	TTL           string
+	ReadOnlyMount bool
+	ActiveOfKind  int
+	Rules         []GrantRule
+}
 
 // Resource is what the action targets. Kind is "token", "node", "user",
 // "agent" or "" for list-type actions with no single target.
@@ -155,6 +206,15 @@ type Policy interface {
 //     that they made (Principal.Creator: created by the agent or produced
 //     by a job it submitted), and delete only those they made. Profiles
 //     are listed by users and agents and set by admins only;
+//   - grants and control (phase 5): admins everything; members request
+//     grants for subjects they own, list and get their own grants, revoke
+//     their own; approve and deny require admin OR ownership of the node the
+//     grant attaches to (the node owner decides about their machine); node
+//     sharing: get for the owner and admins, set for the owner and admins;
+//     freezes: channel freeze/unfreeze by the channel owner or admins;
+//     freeze all by admins and members (anyone may pull the emergency
+//     brake), unfreeze all by admins only (spec: unfreezing needs the owner);
+//     agents may request grants for themselves and list their own;
 //   - anything else is denied.
 func Default() Policy { return defaultPolicy{} }
 

@@ -101,6 +101,14 @@ const (
 	RPCJobStarted = "job.started" // JobStartedRequest -> JobStartedResponse
 	RPCJobLog     = "job.log"     // JobLogChunk -> JobLogAck
 	RPCJobDone    = "job.done"    // JobDoneRequest -> JobDoneResponse
+
+	// Phase 5: grants, brokers, sharing. Agent-scoped:
+	RPCAgentGrantRequest = "agent.grant.request" // AgentRequestGrantRequest -> RequestGrantResponse
+	RPCAgentGrantList    = "agent.grant.list"    // AgentListGrantsRequest -> ListGrantsResponse
+	// Node-scoped:
+	RPCGrantRevoked = "grant.revoked" // GrantRevokedRequest -> GrantRevokedResponse
+	RPCBrokerUsage  = "broker.usage"  // BrokerUsageRequest -> BrokerUsageResponse
+	RPCNodeSharing  = "node.sharing"  // NodeSharingRequest -> NodeSharingResponse
 )
 
 // StatusHeader is set on every RPC reply from the hub: "ok" or "error". On

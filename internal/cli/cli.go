@@ -66,6 +66,21 @@
 //	mycel artifacts put <path> [--name n] [--channel name]
 //	mycel artifacts rm <id>
 //
+// Phase 5 additions:
+//
+//	mycel grants ls [--pending] [--node n] [--subject s] [--all]
+//	mycel grants get <id>
+//	mycel grants request --kind ollama|gpu|docker-host|mount|egress --subject agent:… [--duration 2h] [--reason ..] [--model m]... [--device 0] [--exclusive] [--image i]... [--host-path p --guest-path g --ro] [--allow host]...
+//	mycel approve <id> [--duration d] [--note n]      (alias: mycel grants approve)
+//	mycel deny <id> [--note n]
+//	mycel grants revoke <id>
+//	mycel freeze --agent id | --channel name | --all [--reason r]
+//	mycel unfreeze --agent id | --channel name | --all
+//	mycel freeze status
+//	mycel nodes share <name> [--offer docker,ollama] [--when always|idle|schedule] [--window mon-fri=22:00-07:00]... [--local-first] [--max-jobs n] [--idle-after 10m]
+//	mycel node share ... (same flags; THIS machine, through the local API; tighten only)
+//	mycel node grants ls | revoke <id>  (this machine, local API)
+//
 // Global flags: --json, --hub-url, --api-key (override config.yaml), -v.
 // Environment: MYCEL_HOME (see internal/config), MYCEL_API_KEY, MYCEL_HUB_URL.
 package cli

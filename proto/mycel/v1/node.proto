@@ -4,6 +4,7 @@ package mycel.v1;
 
 import "mycel/v1/common.proto";
 import "mycel/v1/envelope.proto";
+import "mycel/v1/grant.proto";
 import "mycel/v1/job.proto";
 
 message Gpu {
@@ -74,6 +75,11 @@ message CtlRequest {
     AgentCtl agent = 5; // phase 3: pause, resume or stop one local agent
     CreateSandbox create_sandbox = 6; // phase 4: run a job
     KillSandbox kill_sandbox = 7; // phase 4: cancel a job
+    AttachGrant attach_grant = 8; // phase 5
+    DetachGrant detach_grant = 9; // phase 5
+    Freeze freeze = 10; // phase 5
+    Unfreeze unfreeze = 11; // phase 5
+    SharingSettings sharing = 12; // phase 5: the owner's hub-side settings changed
   }
 }
 

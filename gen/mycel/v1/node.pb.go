@@ -520,6 +520,11 @@ type CtlRequest struct {
 	//	*CtlRequest_Agent
 	//	*CtlRequest_CreateSandbox
 	//	*CtlRequest_KillSandbox
+	//	*CtlRequest_AttachGrant
+	//	*CtlRequest_DetachGrant
+	//	*CtlRequest_Freeze
+	//	*CtlRequest_Unfreeze
+	//	*CtlRequest_Sharing
 	Cmd           isCtlRequest_Cmd `protobuf_oneof:"cmd"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -625,6 +630,51 @@ func (x *CtlRequest) GetKillSandbox() *KillSandbox {
 	return nil
 }
 
+func (x *CtlRequest) GetAttachGrant() *AttachGrant {
+	if x != nil {
+		if x, ok := x.Cmd.(*CtlRequest_AttachGrant); ok {
+			return x.AttachGrant
+		}
+	}
+	return nil
+}
+
+func (x *CtlRequest) GetDetachGrant() *DetachGrant {
+	if x != nil {
+		if x, ok := x.Cmd.(*CtlRequest_DetachGrant); ok {
+			return x.DetachGrant
+		}
+	}
+	return nil
+}
+
+func (x *CtlRequest) GetFreeze() *Freeze {
+	if x != nil {
+		if x, ok := x.Cmd.(*CtlRequest_Freeze); ok {
+			return x.Freeze
+		}
+	}
+	return nil
+}
+
+func (x *CtlRequest) GetUnfreeze() *Unfreeze {
+	if x != nil {
+		if x, ok := x.Cmd.(*CtlRequest_Unfreeze); ok {
+			return x.Unfreeze
+		}
+	}
+	return nil
+}
+
+func (x *CtlRequest) GetSharing() *SharingSettings {
+	if x != nil {
+		if x, ok := x.Cmd.(*CtlRequest_Sharing); ok {
+			return x.Sharing
+		}
+	}
+	return nil
+}
+
 type isCtlRequest_Cmd interface {
 	isCtlRequest_Cmd()
 }
@@ -657,6 +707,26 @@ type CtlRequest_KillSandbox struct {
 	KillSandbox *KillSandbox `protobuf:"bytes,7,opt,name=kill_sandbox,json=killSandbox,proto3,oneof"` // phase 4: cancel a job
 }
 
+type CtlRequest_AttachGrant struct {
+	AttachGrant *AttachGrant `protobuf:"bytes,8,opt,name=attach_grant,json=attachGrant,proto3,oneof"` // phase 5
+}
+
+type CtlRequest_DetachGrant struct {
+	DetachGrant *DetachGrant `protobuf:"bytes,9,opt,name=detach_grant,json=detachGrant,proto3,oneof"` // phase 5
+}
+
+type CtlRequest_Freeze struct {
+	Freeze *Freeze `protobuf:"bytes,10,opt,name=freeze,proto3,oneof"` // phase 5
+}
+
+type CtlRequest_Unfreeze struct {
+	Unfreeze *Unfreeze `protobuf:"bytes,11,opt,name=unfreeze,proto3,oneof"` // phase 5
+}
+
+type CtlRequest_Sharing struct {
+	Sharing *SharingSettings `protobuf:"bytes,12,opt,name=sharing,proto3,oneof"` // phase 5: the owner's hub-side settings changed
+}
+
 func (*CtlRequest_Ping) isCtlRequest_Cmd() {}
 
 func (*CtlRequest_Revoked) isCtlRequest_Cmd() {}
@@ -670,6 +740,16 @@ func (*CtlRequest_Agent) isCtlRequest_Cmd() {}
 func (*CtlRequest_CreateSandbox) isCtlRequest_Cmd() {}
 
 func (*CtlRequest_KillSandbox) isCtlRequest_Cmd() {}
+
+func (*CtlRequest_AttachGrant) isCtlRequest_Cmd() {}
+
+func (*CtlRequest_DetachGrant) isCtlRequest_Cmd() {}
+
+func (*CtlRequest_Freeze) isCtlRequest_Cmd() {}
+
+func (*CtlRequest_Unfreeze) isCtlRequest_Cmd() {}
+
+func (*CtlRequest_Sharing) isCtlRequest_Cmd() {}
 
 // AgentCtl is sent by the hub when an agent is paused (budget exhausted,
 // kill switch), resumed or stopped. The node applies it to the local worker
@@ -1465,7 +1545,7 @@ var File_mycel_v1_node_proto protoreflect.FileDescriptor
 
 const file_mycel_v1_node_proto_rawDesc = "" +
 	"\n" +
-	"\x13mycel/v1/node.proto\x12\bmycel.v1\x1a\x15mycel/v1/common.proto\x1a\x17mycel/v1/envelope.proto\x1a\x12mycel/v1/job.proto\"\x80\x01\n" +
+	"\x13mycel/v1/node.proto\x12\bmycel.v1\x1a\x15mycel/v1/common.proto\x1a\x17mycel/v1/envelope.proto\x1a\x14mycel/v1/grant.proto\x1a\x12mycel/v1/job.proto\"\x80\x01\n" +
 	"\x03Gpu\x12\x14\n" +
 	"\x05index\x18\x01 \x01(\x05R\x05index\x12\x16\n" +
 	"\x06vendor\x18\x02 \x01(\tR\x06vendor\x12\x14\n" +
@@ -1515,7 +1595,7 @@ const file_mycel_v1_node_proto_rawDesc = "" +
 	"\tinventory\x18\x02 \x01(\v2\x13.mycel.v1.InventoryR\tinventory\x12%\n" +
 	"\x0einventory_hash\x18\x03 \x01(\tR\rinventoryHash\x12%\n" +
 	"\x0euptime_seconds\x18\x04 \x01(\x04R\ruptimeSeconds\x12\x17\n" +
-	"\asent_at\x18\x05 \x01(\tR\x06sentAt\"\xf4\x02\n" +
+	"\asent_at\x18\x05 \x01(\tR\x06sentAt\"\x81\x05\n" +
 	"\n" +
 	"CtlRequest\x12$\n" +
 	"\x04ping\x18\x01 \x01(\v2\x0e.mycel.v1.PingH\x00R\x04ping\x12-\n" +
@@ -1524,7 +1604,13 @@ const file_mycel_v1_node_proto_rawDesc = "" +
 	"\bshutdown\x18\x04 \x01(\v2\x12.mycel.v1.ShutdownH\x00R\bshutdown\x12*\n" +
 	"\x05agent\x18\x05 \x01(\v2\x12.mycel.v1.AgentCtlH\x00R\x05agent\x12@\n" +
 	"\x0ecreate_sandbox\x18\x06 \x01(\v2\x17.mycel.v1.CreateSandboxH\x00R\rcreateSandbox\x12:\n" +
-	"\fkill_sandbox\x18\a \x01(\v2\x15.mycel.v1.KillSandboxH\x00R\vkillSandboxB\x05\n" +
+	"\fkill_sandbox\x18\a \x01(\v2\x15.mycel.v1.KillSandboxH\x00R\vkillSandbox\x12:\n" +
+	"\fattach_grant\x18\b \x01(\v2\x15.mycel.v1.AttachGrantH\x00R\vattachGrant\x12:\n" +
+	"\fdetach_grant\x18\t \x01(\v2\x15.mycel.v1.DetachGrantH\x00R\vdetachGrant\x12*\n" +
+	"\x06freeze\x18\n" +
+	" \x01(\v2\x10.mycel.v1.FreezeH\x00R\x06freeze\x120\n" +
+	"\bunfreeze\x18\v \x01(\v2\x12.mycel.v1.UnfreezeH\x00R\bunfreeze\x125\n" +
+	"\asharing\x18\f \x01(\v2\x19.mycel.v1.SharingSettingsH\x00R\asharingB\x05\n" +
 	"\x03cmd\"U\n" +
 	"\bAgentCtl\x12\x19\n" +
 	"\bagent_id\x18\x01 \x01(\tR\aagentId\x12\x16\n" +
@@ -1618,7 +1704,12 @@ var file_mycel_v1_node_proto_goTypes = []any{
 	(*Capabilities)(nil),              // 20: mycel.v1.Capabilities
 	(*CreateSandbox)(nil),             // 21: mycel.v1.CreateSandbox
 	(*KillSandbox)(nil),               // 22: mycel.v1.KillSandbox
-	(*Budget)(nil),                    // 23: mycel.v1.Budget
+	(*AttachGrant)(nil),               // 23: mycel.v1.AttachGrant
+	(*DetachGrant)(nil),               // 24: mycel.v1.DetachGrant
+	(*Freeze)(nil),                    // 25: mycel.v1.Freeze
+	(*Unfreeze)(nil),                  // 26: mycel.v1.Unfreeze
+	(*SharingSettings)(nil),           // 27: mycel.v1.SharingSettings
+	(*Budget)(nil),                    // 28: mycel.v1.Budget
 }
 var file_mycel_v1_node_proto_depIdxs = []int32{
 	0,  // 0: mycel.v1.Inventory.gpus:type_name -> mycel.v1.Gpu
@@ -1635,15 +1726,20 @@ var file_mycel_v1_node_proto_depIdxs = []int32{
 	6,  // 11: mycel.v1.CtlRequest.agent:type_name -> mycel.v1.AgentCtl
 	21, // 12: mycel.v1.CtlRequest.create_sandbox:type_name -> mycel.v1.CreateSandbox
 	22, // 13: mycel.v1.CtlRequest.kill_sandbox:type_name -> mycel.v1.KillSandbox
-	20, // 14: mycel.v1.SetCaps.caps_enabled:type_name -> mycel.v1.Capabilities
-	23, // 15: mycel.v1.RegisterAgentRequest.budget:type_name -> mycel.v1.Budget
-	23, // 16: mycel.v1.AgentUsageResponse.agent_remaining:type_name -> mycel.v1.Budget
-	23, // 17: mycel.v1.AgentUsageResponse.channel_remaining:type_name -> mycel.v1.Budget
-	18, // [18:18] is the sub-list for method output_type
-	18, // [18:18] is the sub-list for method input_type
-	18, // [18:18] is the sub-list for extension type_name
-	18, // [18:18] is the sub-list for extension extendee
-	0,  // [0:18] is the sub-list for field type_name
+	23, // 14: mycel.v1.CtlRequest.attach_grant:type_name -> mycel.v1.AttachGrant
+	24, // 15: mycel.v1.CtlRequest.detach_grant:type_name -> mycel.v1.DetachGrant
+	25, // 16: mycel.v1.CtlRequest.freeze:type_name -> mycel.v1.Freeze
+	26, // 17: mycel.v1.CtlRequest.unfreeze:type_name -> mycel.v1.Unfreeze
+	27, // 18: mycel.v1.CtlRequest.sharing:type_name -> mycel.v1.SharingSettings
+	20, // 19: mycel.v1.SetCaps.caps_enabled:type_name -> mycel.v1.Capabilities
+	28, // 20: mycel.v1.RegisterAgentRequest.budget:type_name -> mycel.v1.Budget
+	28, // 21: mycel.v1.AgentUsageResponse.agent_remaining:type_name -> mycel.v1.Budget
+	28, // 22: mycel.v1.AgentUsageResponse.channel_remaining:type_name -> mycel.v1.Budget
+	23, // [23:23] is the sub-list for method output_type
+	23, // [23:23] is the sub-list for method input_type
+	23, // [23:23] is the sub-list for extension type_name
+	23, // [23:23] is the sub-list for extension extendee
+	0,  // [0:23] is the sub-list for field type_name
 }
 
 func init() { file_mycel_v1_node_proto_init() }
@@ -1653,6 +1749,7 @@ func file_mycel_v1_node_proto_init() {
 	}
 	file_mycel_v1_common_proto_init()
 	file_mycel_v1_envelope_proto_init()
+	file_mycel_v1_grant_proto_init()
 	file_mycel_v1_job_proto_init()
 	file_mycel_v1_node_proto_msgTypes[5].OneofWrappers = []any{
 		(*CtlRequest_Ping)(nil),
@@ -1662,6 +1759,11 @@ func file_mycel_v1_node_proto_init() {
 		(*CtlRequest_Agent)(nil),
 		(*CtlRequest_CreateSandbox)(nil),
 		(*CtlRequest_KillSandbox)(nil),
+		(*CtlRequest_AttachGrant)(nil),
+		(*CtlRequest_DetachGrant)(nil),
+		(*CtlRequest_Freeze)(nil),
+		(*CtlRequest_Unfreeze)(nil),
+		(*CtlRequest_Sharing)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{

@@ -58,3 +58,22 @@ Not covered yet:
 - Child processes that detach from the worker's process group escape pause, stop and kill.
 - Stop ends the current run only; a stopped worker may be registered again by its node. Revoke is the lasting removal.
 
+## Phase 4
+
+Covered:
+
+- Every sandbox starts empty; the workspace is seeded by copy; mounts are validated against a deny list and symlink-resolved; the host Docker socket is never mounted.
+- Egress only through the node's proxy with a per-sandbox credential; names are resolved once and dialled exactly; name-resolved loopback, private, carrier-NAT, unique-local, translated and node-own addresses are refused unless an IP is listed literally; every attempt is audited with bytes.
+- Jobs are bound to the node identity they were assigned to; a removed or revoked node's jobs fail at once, and a re-enrolled name inherits nothing.
+- A job's result message in a channel obeys the same posting rules as the submitter and is marked untrusted.
+- Artifacts are owner-scoped with channel visibility, served as attachments with nosniff, quota- and concurrency-limited; nodes can only report on, upload for and fetch inputs of their own assigned jobs.
+
+Not covered yet:
+
+- Any member's job can run on any node with the `sandbox` capability, and that node's owner can read the job's environment, inputs and workspace: job environments are not secrets until phase 5 adds sharing settings and the vault.
+- Nested Docker is unavailable inside gVisor-based sandboxes (Linux, Windows); phase 5's brokered host Docker covers those nodes.
+- The Linux and Windows backends have only been compile-checked; their firewall and cgroup behaviour must be verified on real machines. The gVisor path needs root or CAP_NET_ADMIN plus CAP_SYS_ADMIN on the node; a fixed-verb root helper is the planned narrowing.
+- Guest helper binaries inside gVisor sandboxes come from the image, so a workload can trojan them; CopyOut and Glob output is treated as untrusted.
+- Child processes that detach from a fake-backend job's process group escape it (the fake backend has no isolation by design).
+- On macOS the sandbox firewall is a single in-guest layer: a guest kernel local-root exploit could flush it and then reach the host's loopback services through the Lima gateway. Mitigations in place: unprivileged user namespaces disabled, no sudo, no DNS, pinned images; the images need periodic refreshing because they receive no upgrades at first boot.
+
