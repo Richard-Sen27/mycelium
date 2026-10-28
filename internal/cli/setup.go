@@ -26,6 +26,9 @@ type harnessManifest struct {
 	MCP         struct {
 		File  string         `yaml:"file"`
 		Entry map[string]any `yaml:"entry"`
+		// Instructions replace File and Entry for harnesses without a
+		// per-project MCP config file: setup prints them and writes nothing.
+		Instructions string `yaml:"instructions"`
 	} `yaml:"mcp"`
 	Hooks *struct {
 		File    string `yaml:"file"`
@@ -51,8 +54,8 @@ func loadManifest(name, agent string) (*harnessManifest, error) {
 	if err := yaml.Unmarshal(raw, &m); err != nil {
 		return nil, fmt.Errorf("harness manifest %s: %w", name, err)
 	}
-	if m.MCP.File == "" || len(m.MCP.Entry) == 0 {
-		return nil, fmt.Errorf("harness manifest %s has no mcp.file or mcp.entry", name)
+	if (m.MCP.File == "" || len(m.MCP.Entry) == 0) && strings.TrimSpace(m.MCP.Instructions) == "" {
+		return nil, fmt.Errorf("harness manifest %s has no mcp.file and mcp.entry, nor mcp.instructions", name)
 	}
 	return &m, nil
 }
@@ -65,7 +68,7 @@ type touchedFile struct {
 
 func (a *app) agentCmd() *cobra.Command {
 	cmd := groupCmd("agent", "Connect agent harnesses on this machine")
-	cmd.AddCommand(a.agentSetupCmd())
+	cmd.AddCommand(a.agentSetupCmd(), a.agentSpawnCmd())
 	return cmd
 }
 
@@ -87,6 +90,9 @@ func (a *app) agentSetupCmd() *cobra.Command {
 			m, err := loadManifest(args[0], agent)
 			if err != nil {
 				return err
+			}
+			if m.MCP.File == "" {
+				return a.printSetupInstructions(m, agent)
 			}
 			var touched []touchedFile
 			p := filepath.Join(dir, filepath.FromSlash(m.MCP.File))
@@ -148,6 +154,22 @@ func (a *app) agentSetupCmd() *cobra.Command {
 	cmd.Flags().StringVar(&agent, "agent", "", "agent name (required)")
 	cmd.Flags().StringVar(&dir, "dir", ".", "project directory")
 	return cmd
+}
+
+// printSetupInstructions handles a harness whose MCP servers live only in its
+// user-wide config: setup writes nothing and tells the user what to add.
+func (a *app) printSetupInstructions(m *harnessManifest, agent string) error {
+	text := strings.TrimRight(m.MCP.Instructions, "\n")
+	if a.jsonOut {
+		return a.printJSONValue(map[string]any{"harness": m.Name, "agent": agent, "files": []touchedFile{}, "instructions": text})
+	}
+	display := m.DisplayName
+	if display == "" {
+		display = m.Name
+	}
+	_, err := fmt.Fprintf(a.stdout, "%s has no per-project MCP config; nothing was written.\n\n%s\n\n%s will then join Mycelium as agent %q while `mycel daemon` runs on this machine.\n",
+		display, text, display, agent)
+	return err
 }
 
 func absOr(dir string) string {

@@ -37,6 +37,20 @@
 //	mycel read <channel> [--limit 50] [--thread id] [--follow] [--quote]
 //	mycel bb get <channel> [key] | put <channel> <key> <value> [--expect-version n] | rm <channel> <key>
 //
+// Phase 3 (orchestrator sessions, local workers, budgets):
+//
+//	mycel agents ls                     (adds PARENT, STATE with pause reason, USED tokens/$usd)
+//	mycel agents get|pause|resume|stop <id>     (pause [--reason text])
+//	mycel agents budget <id> [--tokens N] [--usd X]
+//	mycel channels create ... [--budget-tokens N] [--budget-usd X]
+//	mycel channels policy <name> [--budget-tokens N] [--budget-usd X] [--max-hops N] [--rate N] [--open]
+//	mycel channels usage <name> | reset-usage <name>
+//	mycel agent spawn <harness> --task <text> --channel <name> [--name] [--workdir] [--max-turns] [--budget-tokens] [--budget-usd]
+//	mycel workers ls | stop <agent>                              (local API)
+//	mycel fakeharness --script <file> --agent <name> [--prompt]  (hidden; build tag fakeharness)
+//
+// Commands that take --local-addr default to $MYCEL_LOCAL_ADDR when set.
+//
 // A channel argument without "#", "@" or "dm:" gets a leading "#".
 //
 // Global flags: --json, --hub-url, --api-key (override config.yaml), -v.
@@ -74,6 +88,10 @@ const (
 	exitUsage   = 2
 	exitRevoked = 3
 )
+
+// extraCommands are added to the root by files compiled in only with a build
+// tag (the hidden `fakeharness` command, tag fakeharness).
+var extraCommands []func(*app) *cobra.Command
 
 // usageError marks a command-line mistake (exit code 2).
 type usageError struct{ err error }
@@ -239,7 +257,11 @@ func (a *app) rootCmd() *cobra.Command {
 		a.postCmd(),
 		a.readCmd(),
 		a.bbCmd(),
+		a.workersCmd(),
 	)
+	for _, mk := range extraCommands {
+		root.AddCommand(mk(a))
+	}
 	return root
 }
 

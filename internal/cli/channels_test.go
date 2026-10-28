@@ -3,6 +3,8 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -159,6 +161,8 @@ func (f *fakeChannels) ListAgents(_ context.Context, r *connect.Request[mycelv1.
 	}
 	return connect.NewResponse(&mycelv1.ListAgentsResponse{Agents: []*mycelv1.Agent{
 		{Id: "agent:coder@mac", Name: "coder", NodeName: "mac", OwnerId: "usr_1", Harness: "claude-code", State: "running"},
+		{Id: "agent:coder-w1@mac", Name: "coder-w1", NodeName: "mac", OwnerId: "usr_1", Harness: "claude-code", State: "paused",
+			Parent: "agent:coder@mac", PausedReason: "budget: agent", Used: &mycelv1.Budget{Tokens: 1200, Usd: 0.0123}},
 	}}), nil
 }
 
@@ -388,9 +392,14 @@ func TestWatchSendsBearer(t *testing.T) {
 type localFake struct {
 	mu       sync.Mutex
 	reqs     []string
+	bodies   []string // request bodies, parallel to reqs
 	agents   string
 	inbox    string
 	inboxErr bool
+	workers  string // GET /api/local/workers
+	spawnErr bool
+	joinErr  bool            // agent.channel.join is refused
+	joined   map[string]bool // channels the session joined; spawn requires membership like the hub
 }
 
 func (f *localFake) log() []string {
@@ -401,12 +410,16 @@ func (f *localFake) log() []string {
 
 func newLocalFake(t *testing.T, token string) (*localFake, *httptest.Server) {
 	t.Helper()
-	f := &localFake{agents: `{"agents":[]}`, inbox: `{}`}
+	f := &localFake{agents: `{"agents":[]}`, inbox: `{}`, workers: `{"workers":[]}`}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
 		f.mu.Lock()
 		f.reqs = append(f.reqs, r.Method+" "+r.URL.Path)
-		agents, inbox, inboxErr := f.agents, f.inbox, f.inboxErr
+		f.bodies = append(f.bodies, string(b))
+		agents, inbox, inboxErr, workers, spawnErr, joinErr := f.agents, f.inbox, f.inboxErr, f.workers, f.spawnErr, f.joinErr
 		f.mu.Unlock()
+		var chBody struct{ Channel string }
+		_ = json.Unmarshal(b, &chBody)
 		w.Header().Set("Content-Type", "application/json")
 		if r.Header.Get("Authorization") != "Bearer "+token {
 			w.WriteHeader(http.StatusUnauthorized)
@@ -417,8 +430,44 @@ func newLocalFake(t *testing.T, token string) (*localFake, *httptest.Server) {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/local/agents":
 			_, _ = w.Write([]byte(agents))
 		case r.Method == http.MethodPost && r.URL.Path == "/api/local/agents":
+			var reg struct{ Name string }
+			_ = json.Unmarshal(b, &reg)
+			if reg.Name == "" {
+				reg.Name = "coder"
+			}
 			w.WriteHeader(http.StatusCreated)
-			_, _ = w.Write([]byte(`{"agent_id":"agent:coder@mac","session":"tmp"}`))
+			_, _ = fmt.Fprintf(w, `{"agent_id":"agent:%s@mac","session":"tmp"}`, reg.Name)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/local/agents/tmp/rpc/agent.channel.join":
+			if joinErr {
+				w.WriteHeader(http.StatusForbidden)
+				_, _ = w.Write([]byte(`{"error":"permission_denied: ` + chBody.Channel + ` is not open to members"}`))
+				return
+			}
+			f.mu.Lock()
+			if f.joined == nil {
+				f.joined = map[string]bool{}
+			}
+			f.joined[chBody.Channel] = true
+			f.mu.Unlock()
+			_, _ = fmt.Fprintf(w, `{"channel":{"name":%q}}`, chBody.Channel)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/local/agents/tmp/spawn":
+			f.mu.Lock()
+			member := f.joined[chBody.Channel]
+			f.mu.Unlock()
+			if !member {
+				w.WriteHeader(http.StatusForbidden)
+				_, _ = w.Write([]byte(`{"error":"permission_denied: the parent is not a member of ` + chBody.Channel + `"}`))
+				return
+			}
+			if spawnErr {
+				w.WriteHeader(http.StatusBadRequest)
+				_, _ = w.Write([]byte(`{"error":"unknown harness nope"}`))
+				return
+			}
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"agent_id":"agent:cli-w1@mac","worker":"agent:cli-w1@mac"}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/local/workers":
+			_, _ = w.Write([]byte(workers))
 		case r.Method == http.MethodDelete:
 			w.WriteHeader(http.StatusNoContent)
 		case strings.HasSuffix(r.URL.Path, "/rpc/agent.inbox.pull"):

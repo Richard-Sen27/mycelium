@@ -10,6 +10,8 @@
 //	    Expect string            // substring that must appear in the tool result text ("" = any)
 //	    Store  string            // store the result text under this name for later {{name}} substitution
 //	    Repeat int               // run this step up to Repeat times until Expect matches (for waits)
+//	    Usage  *StepUsage        // phase 3, optional: {"input":N,"output":M,"usd":X} reported by
+//	                             // `mycel fakeharness` as stream-json when the script runs as a worker
 //	}
 //	func Run(ctx context.Context, bin string, env []string, agent, harness string, script []Step) (Transcript, error)
 //

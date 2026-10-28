@@ -29,6 +29,15 @@ type Step struct {
 	Repeat     int            `json:"repeat,omitempty"`      // run up to Repeat times until Expect matches
 	AllowError bool           `json:"allow_error,omitempty"` // a tool error, substitution failure or Expect mismatch does not fail the script
 	SleepMS    int            `json:"sleep_ms,omitempty"`    // with Tool "": pause this long (keeps the MCP session alive without consuming the inbox)
+	Usage      *StepUsage     `json:"usage,omitempty"`       // usage the `mycel fakeharness` wrapper reports for this step (stream-json)
+}
+
+// StepUsage is the token and cost usage a step reports when the script runs
+// as a spawned worker through `mycel fakeharness`.
+type StepUsage struct {
+	Input  int     `json:"input,omitempty"`  // input tokens
+	Output int     `json:"output,omitempty"` // output tokens
+	USD    float64 `json:"usd,omitempty"`    // cost in US dollars
 }
 
 // Call is one tool call made by the harness.

@@ -23,7 +23,8 @@ var normChannel = mcpadapter.NormalizeChannel
 func (a *app) channelsCmd() *cobra.Command {
 	cmd := groupCmd("channels", "List and manage channels", "channel", "ch")
 	cmd.AddCommand(a.channelsLsCmd(), a.channelsCreateCmd(), a.channelsGetCmd(),
-		a.channelsArchiveCmd(), a.channelsAddCmd(), a.channelsRmCmd())
+		a.channelsArchiveCmd(), a.channelsAddCmd(), a.channelsRmCmd(),
+		a.channelsPolicyCmd(), a.channelsUsageCmd(), a.channelsResetUsageCmd())
 	return cmd
 }
 
@@ -76,8 +77,10 @@ func (a *app) channelsCreateCmd() *cobra.Command {
 	var maxHops, rate int32
 	var open bool
 	var members []string
+	var budgetTokens int64
+	var budgetUSD float64
 	cmd := &cobra.Command{
-		Use:   "create <name> [--type topic|task] [--max-hops N] [--rate N] [--open] [--members a,b]",
+		Use:   "create <name> [--type topic|task] [--max-hops N] [--rate N] [--open] [--members a,b] [--budget-tokens N] [--budget-usd X]",
 		Short: "Create a channel",
 		Args:  exactArgs(1, "name"),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -85,16 +88,19 @@ func (a *app) channelsCreateCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if maxHops < 0 || rate < 0 {
-				return usagef("--max-hops and --rate must not be negative")
+			if maxHops < 0 || rate < 0 || budgetTokens < 0 || budgetUSD < 0 {
+				return usagef("--max-hops, --rate, --budget-tokens and --budget-usd must not be negative")
 			}
 			req := &mycelv1.CreateChannelRequest{Name: normChannel(args[0]), Type: ct, Members: splitList(members)}
-			if cmd.Flags().Changed("max-hops") || cmd.Flags().Changed("rate") || open {
+			if cmd.Flags().Changed("max-hops") || cmd.Flags().Changed("rate") || open || budgetTokens > 0 || budgetUSD > 0 {
 				// Zero values mean "hub default"; both kinds of members may
 				// post on a topic or task channel.
 				req.Policy = &mycelv1.ChannelPolicy{
 					MaxHops: maxHops, RatePerMinute: rate, OpenToMembers: open,
 					AgentsMayPost: true, HumansMayPost: true,
+				}
+				if budgetTokens > 0 || budgetUSD > 0 {
+					req.Policy.Budget = &mycelv1.Budget{Tokens: budgetTokens, Usd: budgetUSD}
 				}
 			}
 			hc, err := a.hub(cmd)
@@ -119,6 +125,8 @@ func (a *app) channelsCreateCmd() *cobra.Command {
 	f.Int32Var(&rate, "rate", 0, "messages per minute per agent (0 = hub default, 60)")
 	f.BoolVar(&open, "open", false, "any member may join without an invite")
 	f.StringSliceVar(&members, "members", nil, "initial members (agent or user ids), comma-separated")
+	f.Int64Var(&budgetTokens, "budget-tokens", 0, "channel token budget (0 = unlimited)")
+	f.Float64Var(&budgetUSD, "budget-usd", 0, "channel budget in US dollars (0 = unlimited)")
 	return cmd
 }
 

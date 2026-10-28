@@ -178,6 +178,118 @@ func (c *Client) Delete(ctx context.Context, session string) error {
 	return c.do(ctx, http.MethodDelete, "/api/local/agents/"+url.PathEscape(session), nil, nil)
 }
 
+// SessionHeader carries the caller's session on requests that act for a
+// session without naming it in the path (DELETE /api/local/workers/{agent}),
+// so the daemon can tell the spawning session from the local UI or CLI.
+const SessionHeader = "Mycel-Session"
+
+// DefaultProfile is the only worker profile in phase 3: a harness started on
+// this machine, natively, under the user's own login.
+const DefaultProfile = "trusted-host"
+
+// SpawnBudget is a worker's budget; zero means unlimited.
+type SpawnBudget struct {
+	Tokens int64   `json:"tokens,omitempty"`
+	USD    float64 `json:"usd,omitempty"`
+}
+
+// SpawnRequest is the body of POST /api/local/agents/{session}/spawn.
+type SpawnRequest struct {
+	Harness  string       `json:"harness"`
+	Name     string       `json:"name,omitempty"`
+	Task     string       `json:"task"`
+	Channel  string       `json:"channel"`
+	Profile  string       `json:"profile"`
+	Workdir  string       `json:"workdir,omitempty"`
+	MaxTurns int          `json:"max_turns,omitempty"`
+	Budget   *SpawnBudget `json:"budget,omitempty"`
+}
+
+// MaxTaskBytes caps a spawn request's task text.
+const MaxTaskBytes = 16 << 10
+
+// CheckTask rejects an empty task or one longer than MaxTaskBytes.
+func CheckTask(task string) error {
+	if strings.TrimSpace(task) == "" {
+		return errors.New("task is required")
+	}
+	if len(task) > MaxTaskBytes {
+		return fmt.Errorf("task is %d bytes, more than the %d (16 KiB) allowed; put long material on the channel's blackboard and refer to it", len(task), MaxTaskBytes)
+	}
+	return nil
+}
+
+// SpawnResult is the reply of a spawn.
+type SpawnResult struct {
+	AgentID string `json:"agent_id"`
+	Worker  string `json:"worker"`
+}
+
+// WorkerUsage is what a worker has used so far.
+type WorkerUsage struct {
+	Tokens int64   `json:"tokens"`
+	USD    float64 `json:"usd"`
+	Turns  int     `json:"turns"`
+}
+
+// Worker is one entry of GET /api/local/workers.
+type Worker struct {
+	AgentID   string      `json:"agent_id"`
+	Parent    string      `json:"parent"`
+	Harness   string      `json:"harness"`
+	State     string      `json:"state"`
+	PID       int         `json:"pid"`
+	StartedAt string      `json:"started_at"`
+	ExitedAt  string      `json:"exited_at"`
+	ExitCode  int         `json:"exit_code"`
+	Usage     WorkerUsage `json:"usage"`
+}
+
+// Spawn starts a local worker for session (spawn_agent with target self).
+// An empty Profile becomes DefaultProfile.
+func (c *Client) Spawn(ctx context.Context, session string, req SpawnRequest) (*SpawnResult, error) {
+	if req.Profile == "" {
+		req.Profile = DefaultProfile
+	}
+	body, err := json.Marshal(req)
+	if err != nil {
+		return nil, err
+	}
+	var out SpawnResult
+	path := "/api/local/agents/" + url.PathEscape(session) + "/spawn"
+	if err := c.do(ctx, http.MethodPost, path, body, func(b []byte) error { return json.Unmarshal(b, &out) }); err != nil {
+		return nil, err
+	}
+	if out.AgentID == "" {
+		out.AgentID = out.Worker
+	}
+	if out.AgentID == "" {
+		return nil, errors.New("local API returned no worker id")
+	}
+	return &out, nil
+}
+
+// Workers lists the workers of this node.
+func (c *Client) Workers(ctx context.Context) ([]Worker, error) {
+	var out struct {
+		Workers []Worker `json:"workers"`
+	}
+	if err := c.do(ctx, http.MethodGet, "/api/local/workers", nil, func(b []byte) error { return json.Unmarshal(b, &out) }); err != nil {
+		return nil, err
+	}
+	return out.Workers, nil
+}
+
+// StopWorker stops a worker. session is the caller's session, sent in
+// SessionHeader; "" acts with the local sign-in token alone (CLI, local UI).
+func (c *Client) StopWorker(ctx context.Context, session, agentID string) error {
+	var h http.Header
+	if session != "" {
+		h = http.Header{SessionHeader: []string{session}}
+	}
+	return c.doHeader(ctx, http.MethodDelete, "/api/local/workers/"+url.PathEscape(agentID), nil, h, nil)
+}
+
 // Call invokes an agent RPC (a bus.RPCAgent* method) for session. req is the
 // method's request without its `call` field; resp receives the reply.
 func (c *Client) Call(ctx context.Context, session, method string, req, resp proto.Message) error {
@@ -195,6 +307,10 @@ func (c *Client) Call(ctx context.Context, session, method string, req, resp pro
 }
 
 func (c *Client) do(ctx context.Context, method, path string, body []byte, decode func([]byte) error) error {
+	return c.doHeader(ctx, method, path, body, nil, decode)
+}
+
+func (c *Client) doHeader(ctx context.Context, method, path string, body []byte, header http.Header, decode func([]byte) error) error {
 	if _, ok := ctx.Deadline(); !ok {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, 30*time.Second)
@@ -207,6 +323,9 @@ func (c *Client) do(ctx context.Context, method, path string, body []byte, decod
 	req, err := http.NewRequestWithContext(ctx, method, c.base+path, rd)
 	if err != nil {
 		return err
+	}
+	for k, v := range header {
+		req.Header[k] = v
 	}
 	req.Header.Set("Authorization", "Bearer "+c.token)
 	req.Header.Set("Accept", "application/json")

@@ -20,6 +20,7 @@ const testToken = "local-test-token"
 
 type recorded struct {
 	Method, Path, Body string
+	Session            string // Mycel-Session header
 }
 
 // fakeLocal is an httptest fake of the daemon's local API.
@@ -30,6 +31,9 @@ type fakeLocal struct {
 	replies map[string]reply // by rpc method
 	regFail *reply
 	deleted chan string
+	spawn   *reply // POST /api/local/agents/s1/spawn
+	workers string // GET /api/local/workers
+	stopped []string
 }
 
 type reply struct {
@@ -73,8 +77,8 @@ func writeJSON(w http.ResponseWriter, status int, body string) {
 func (f *fakeLocal) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	b, _ := io.ReadAll(r.Body)
 	f.mu.Lock()
-	f.reqs = append(f.reqs, recorded{r.Method, r.URL.Path, string(b)})
-	regFail := f.regFail
+	f.reqs = append(f.reqs, recorded{r.Method, r.URL.Path, string(b), r.Header.Get(SessionHeader)})
+	regFail, spawn, workers := f.regFail, f.spawn, f.workers
 	f.mu.Unlock()
 	if r.Header.Get("Authorization") != "Bearer "+testToken {
 		writeJSON(w, http.StatusUnauthorized, `{"error":"bad local token"}`)
@@ -92,6 +96,22 @@ func (f *fakeLocal) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/api/local/agents/"):
 		w.WriteHeader(http.StatusNoContent)
 		f.deleted <- strings.TrimPrefix(r.URL.Path, "/api/local/agents/")
+	case r.Method == http.MethodPost && r.URL.Path == "/api/local/agents/s1/spawn":
+		if spawn == nil {
+			writeJSON(w, http.StatusCreated, `{"agent_id":"agent:coder-w1@mac","worker":"agent:coder-w1@mac"}`)
+			return
+		}
+		writeJSON(w, spawn.status, spawn.body)
+	case r.Method == http.MethodGet && r.URL.Path == "/api/local/workers":
+		if workers == "" {
+			workers = `{"workers":[]}`
+		}
+		writeJSON(w, http.StatusOK, workers)
+	case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/api/local/workers/"):
+		f.mu.Lock()
+		f.stopped = append(f.stopped, strings.TrimPrefix(r.URL.Path, "/api/local/workers/"))
+		f.mu.Unlock()
+		w.WriteHeader(http.StatusNoContent)
 	case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/api/local/agents/s1/rpc/"):
 		m := strings.TrimPrefix(r.URL.Path, "/api/local/agents/s1/rpc/")
 		f.mu.Lock()
@@ -323,7 +343,8 @@ func TestToolDescriptions(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []string{"whoami", "list_agents", "list_channels", "join_channel", "leave_channel", "post",
-		"read_inbox", "wait_for_message", "read_messages", "blackboard_get", "blackboard_put"}
+		"read_inbox", "wait_for_message", "read_messages", "blackboard_get", "blackboard_put",
+		"spawn_agent", "list_workers", "stop_agent"}
 	got := map[string]*sdk.Tool{}
 	for _, tl := range res.Tools {
 		got[tl.Name] = tl

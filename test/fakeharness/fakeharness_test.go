@@ -46,7 +46,7 @@ func TestSubstitute(t *testing.T) {
 
 func TestLoadScript(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "s.json")
-	src := `[{"tool":"join_channel","args":{"channel":"#x"}},
+	src := `[{"tool":"join_channel","args":{"channel":"#x"},"usage":{"input":120,"output":30,"usd":0.004}},
 	{"tool":"wait_for_message","args":{"timeout_seconds":5},"expect":"hi","store":"m","repeat":3,"allow_error":true},
 	{"sleep_ms":10}]`
 	if err := os.WriteFile(p, []byte(src), 0o600); err != nil {
@@ -58,6 +58,9 @@ func TestLoadScript(t *testing.T) {
 	}
 	if len(s) != 3 || s[1].Repeat != 3 || s[1].Store != "m" || !s[1].AllowError || s[1].Args["timeout_seconds"] != 5.0 || s[2].SleepMS != 10 {
 		t.Fatalf("unexpected script: %+v", s)
+	}
+	if u := s[0].Usage; u == nil || *u != (StepUsage{Input: 120, Output: 30, USD: 0.004}) || s[1].Usage != nil {
+		t.Fatalf("usage: %+v, %+v", s[0].Usage, s[1].Usage)
 	}
 	if _, err := LoadScript(filepath.Join(t.TempDir(), "none.json")); err == nil {
 		t.Error("missing file: want an error")

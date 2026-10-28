@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -19,20 +20,31 @@ import (
 	"github.com/richard-sen27/mycelium/internal/config"
 )
 
+// EnvLocalAddr overrides the default node daemon local API address for the
+// commands that take --local-addr. The daemon sets it for the harness
+// processes of the workers it spawns, so their `mycel mcp` reaches it.
+const EnvLocalAddr = "MYCEL_LOCAL_ADDR"
+
 // localTarget resolves the node daemon's local API URL and sign-in token.
-// The address follows `mycel daemon`: 127.0.0.1:7777, or :7779 when the hub
-// role is initialised in the same data dir.
+// The address is --local-addr, else $MYCEL_LOCAL_ADDR, else the one `mycel
+// daemon` uses: 127.0.0.1:7777, or :7779 when the hub role is initialised in
+// the same data dir.
 func (a *app) localTarget(cmd *cobra.Command, localAddr string) (string, string, error) {
 	dirs, err := config.Resolve()
 	if err != nil {
 		return "", "", fmt.Errorf("resolve config directory: %w", err)
 	}
-	if !cmd.Flags().Changed("local-addr") && fileExists(filepath.Join(dirs.HubDir(), "hub.yaml")) {
-		localAddr = hubMachineLocalAddr
+	source := "--local-addr"
+	if !cmd.Flags().Changed("local-addr") {
+		if v := strings.TrimSpace(os.Getenv(EnvLocalAddr)); v != "" {
+			localAddr, source = v, "$"+EnvLocalAddr
+		} else if fileExists(filepath.Join(dirs.HubDir(), "hub.yaml")) {
+			localAddr = hubMachineLocalAddr
+		}
 	}
 	u, err := mcpadapter.CheckLocalURL(localAddr)
 	if err != nil {
-		return "", "", usageError{fmt.Errorf("--local-addr: %w", err)}
+		return "", "", usageError{fmt.Errorf("%s: %w", source, err)}
 	}
 	tok, err := mcpadapter.ReadLocalToken(dirs.NodeDir())
 	if err != nil {
@@ -150,8 +162,9 @@ func (a *app) hookPull(cmd *cobra.Command, agent, localAddr string) ([]*mycelv1.
 }
 
 func (a *app) agentsCmd() *cobra.Command {
-	cmd := groupCmd("agents", "List agents")
-	cmd.AddCommand(a.agentsLsCmd())
+	cmd := groupCmd("agents", "List and control agents")
+	cmd.AddCommand(a.agentsLsCmd(), a.agentsGetCmd(), a.agentsBudgetCmd(),
+		a.agentsPauseCmd(), a.agentsResumeCmd(), a.agentsStopCmd())
 	return cmd
 }
 
@@ -179,10 +192,10 @@ func (a *app) agentsLsCmd() *cobra.Command {
 				return a.printProto(resp.Msg)
 			}
 			tw := newTable(a.stdout)
-			row(tw, "ID", "NODE", "OWNER", "HARNESS", "STATE", "SANDBOX", "CREATED")
+			row(tw, "ID", "NODE", "OWNER", "HARNESS", "PARENT", "STATE", "USED", "SANDBOX", "CREATED")
 			for _, ag := range resp.Msg.GetAgents() {
 				row(tw, ag.GetId(), dash(ag.GetNodeName()), dash(ag.GetOwnerId()), dash(ag.GetHarness()),
-					dash(ag.GetState()), dash(ag.GetSandboxId()), ago(ag.GetCreatedAt(), a.now()))
+					dash(ag.GetParent()), agentState(ag), usedCell(ag.GetUsed()), dash(ag.GetSandboxId()), ago(ag.GetCreatedAt(), a.now()))
 			}
 			return tw.Flush()
 		},

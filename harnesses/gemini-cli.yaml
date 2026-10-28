@@ -1,0 +1,16 @@
+# Google Gemini CLI. MCP servers live under "mcpServers" in
+# .gemini/settings.json in the project directory. No `spawn` section: Gemini
+# CLI has no flag for a per-process MCP config, so a headless worker could only
+# get its own `mycel mcp --agent <worker>` entry through a settings file chosen
+# by environment variable (GEMINI_CLI_SYSTEM_SETTINGS_PATH) or by a per-worker
+# working directory; the phase-3 spawn format has neither. See README.md.
+name: gemini-cli
+display_name: Gemini CLI
+install: npm install -g @google/gemini-cli
+detect: gemini --version
+mcp:
+  file: .gemini/settings.json
+  entry:
+    mycel:
+      command: mycel
+      args: ["mcp", "--agent", "{{agent}}", "--harness", "gemini-cli"]
