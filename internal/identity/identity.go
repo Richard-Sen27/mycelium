@@ -67,6 +67,16 @@ func ValidNodeName(name string) bool {
 	return true
 }
 
+// HubCAALPN is the ALPN marker nodes and CLIs list in every TLS hello to the
+// hub (API and bus). A hub with an ACME certificate presents its CA-issued
+// certificate to hellos that carry it; the marker is never negotiated as the
+// connection's protocol (D026, internal/tunnel/doc.go).
+const HubCAALPN = "mycel-ca"
+
+// HubClientNextProtos is the ALPN list of node and CLI HTTPS clients of the
+// hub: the marker, then the protocols actually spoken.
+func HubClientNextProtos() []string { return []string{HubCAALPN, "h2", "http/1.1"} }
+
 // Default lifetimes.
 const (
 	CALifetime         = 10 * 365 * 24 * time.Hour

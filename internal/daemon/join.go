@@ -71,7 +71,9 @@ func join(ctx context.Context, opts JoinOptions) (*JoinResult, error) {
 		return nil, errors.New("hub CA: no certificate in PEM")
 	}
 
-	// From here on every connection verifies against the pinned CA only.
+	// From here on every connection verifies against the pinned CA only,
+	// never the system roots: the join token must not reach a relay
+	// operator or anyone else with a public certificate for the hub's name.
 	key, keyPEM, err := identity.GenerateKey()
 	if err != nil {
 		return nil, err
@@ -187,10 +189,13 @@ func fetchCA(ctx context.Context, hubURL string) ([]byte, error) {
 	return pem.EncodeToMemory(blk), nil
 }
 
-// pinnedClient returns an HTTP client that trusts only pool. If clientCert is
-// non-nil, it is called for the TLS client certificate.
+// pinnedClient returns an HTTP client that trusts only pool (the pinned hub
+// CA, never the system roots, D026); the host name is still verified. Its
+// hellos carry the identity.HubCAALPN marker, so a hub with an ACME
+// certificate presents its CA-issued one. If clientCert is non-nil, it is
+// called for the TLS client certificate.
 func pinnedClient(pool *x509.CertPool, clientCert func() *tls.Certificate) *http.Client {
-	cfg := &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12}
+	cfg := &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12, NextProtos: identity.HubClientNextProtos()}
 	if clientCert != nil {
 		cfg.GetClientCertificate = func(*tls.CertificateRequestInfo) (*tls.Certificate, error) {
 			return clientCert(), nil

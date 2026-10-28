@@ -74,6 +74,15 @@ func initHub(ctx context.Context, opts InitOptions) (res *InitResult, err error)
 	if busAdvertise == "" {
 		busAdvertise = "tls://" + net.JoinHostPort(advHost, busPort)
 	}
+	// This machine's node (and CLI) reach the hub at the advertise
+	// addresses, or at the local listeners (a hub behind a relay must not
+	// depend on the relay for its own node).
+	nodeHubURL, nodeBusURL, localHubURL := opts.AdvertiseURL, busAdvertise, ""
+	if opts.LocalListeners {
+		localHubURL = "https://" + localAddr(apiListen)
+		nodeHubURL = localHubURL
+		nodeBusURL = "tls://" + localAddr(busListen)
+	}
 	adminName := orDefault(opts.AdminName, "admin")
 	if !validUserName(adminName) {
 		return nil, fmt.Errorf("hub: invalid admin name %q", adminName)
@@ -213,7 +222,7 @@ func initHub(ctx context.Context, opts InitOptions) (res *InitResult, err error)
 	nodeWritten = true
 	if err = daemon.WriteState(opts.NodeDir, daemon.State{
 		Name: localNode, SPIFFEID: spiffeID, TrustDomain: string(td),
-		HubURL: opts.AdvertiseURL, BusURL: busAdvertise, OwnerID: admin.ID, Caps: caps,
+		HubURL: nodeHubURL, BusURL: nodeBusURL, OwnerID: admin.ID, Caps: caps,
 	}, keyPEM, certPEM, ca.CertPEM()); err != nil {
 		if errors.Is(err, daemon.ErrNodeExists) {
 			nodeWritten = false
@@ -250,6 +259,7 @@ func initHub(ctx context.Context, opts InitOptions) (res *InitResult, err error)
 		AdminUserID:   admin.ID,
 		AdminAPIKey:   adminKey,
 		LocalNodeName: localNode,
+		LocalHubURL:   localHubURL,
 	}, nil
 }
 

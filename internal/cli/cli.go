@@ -97,8 +97,8 @@
 //
 // Phase 7 additions (contracts: internal/tunnel, internal/discovery, internal/service, internal/hub/moving.go):
 //
-//	mycel hub init ... [--tunnel <relay url>] [--acme --acme-email e] [--no-mdns]
-//	mycel hub tunnel set <relay url> | unset | status
+//	mycel hub init ... [--tunnel -] [--acme --acme-email e] [--no-mdns]
+//	mycel hub tunnel set - | unset | status
 //	mycel hub discover [--timeout 3s] [--json]              lists hubs seen by mDNS
 //	mycel hub export [--out file] [--passphrase-file f]
 //	mycel hub import <file> --advertise <url> [--bus-advertise h:p] [--api-listen a] [--bus-listen a] [--redirect-from <old hub url>]
@@ -325,6 +325,7 @@ func (a *app) rootCmd() *cobra.Command {
 		a.serviceCmd(),
 		a.sandboxCmd(),
 	)
+	root.AddCommand(a.relayCmd())
 	for _, mk := range extraCommands {
 		root.AddCommand(mk(a))
 	}

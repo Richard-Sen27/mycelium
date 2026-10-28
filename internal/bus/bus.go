@@ -205,6 +205,10 @@ type ServerConfig struct {
 	// (DefaultJetStreamMaxMemory, DefaultJetStreamMaxStore).
 	JetStreamMaxMemory int64
 	JetStreamMaxStore  int64
+	// GetCertificate, when set, may pick another server certificate per
+	// client hello (the hub's ACME certificate for its advertise host); it
+	// returns (nil, nil) to fall back to TLSCert.
+	GetCertificate func(*tls.ClientHelloInfo) (*tls.Certificate, error)
 }
 
 // Server limits.
@@ -291,10 +295,11 @@ func StartServer(cfg ServerConfig) (*Server, error) {
 		// without TLS. TestAllowNonTLSOff pins this.
 		AllowNonTLS: false,
 		TLSConfig: &tls.Config{
-			Certificates: []tls.Certificate{cfg.TLSCert},
-			ClientCAs:    cfg.ClientCAs,
-			ClientAuth:   tls.RequireAndVerifyClientCert,
-			MinVersion:   tls.VersionTLS13,
+			Certificates:   []tls.Certificate{cfg.TLSCert},
+			GetCertificate: cfg.GetCertificate,
+			ClientCAs:      cfg.ClientCAs,
+			ClientAuth:     tls.RequireAndVerifyClientCert,
+			MinVersion:     tls.VersionTLS13,
 		},
 		TLSVerify:          true,
 		TLSTimeout:         5,
@@ -635,7 +640,7 @@ type ClientConfig struct {
 	URL      string // from EnrolResponse.bus_url
 	NodeName string
 	Cert     tls.Certificate // node cert + key
-	RootCAs  *x509.CertPool  // hub CA
+	RootCAs  *x509.CertPool  // the pinned hub CA only (never the system roots, D026)
 	Logger   *slog.Logger
 	// OnDisconnect is called with the error that caused a disconnect (may be
 	// nil). OnReconnect is called after a successful reconnect.
@@ -689,6 +694,10 @@ func Connect(ctx context.Context, cfg ClientConfig) (*nats.Conn, error) {
 			Certificates: []tls.Certificate{cfg.Cert},
 			RootCAs:      cfg.RootCAs,
 			MinVersion:   tls.VersionTLS13,
+			// The marker makes a hub with an ACME certificate present its
+			// CA-issued one (the bus speaks no ALPN protocol, so nothing is
+			// negotiated).
+			NextProtos: []string{identity.HubCAALPN},
 		}),
 		nats.CustomInboxPrefix(InboxPrefix(cfg.NodeName)),
 		nats.Name(cfg.NodeName),

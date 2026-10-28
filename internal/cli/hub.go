@@ -12,6 +12,7 @@ import (
 func (a *app) hubCmd() *cobra.Command {
 	cmd := groupCmd("hub", "Manage the hub role on this machine")
 	cmd.AddCommand(a.hubInitCmd(), a.hubUIURLCmd())
+	cmd.AddCommand(a.hubTunnelCmd())
 	return cmd
 }
 
@@ -26,11 +27,15 @@ type hubInitJSON struct {
 
 func (a *app) hubInitCmd() *cobra.Command {
 	opts := hub.InitOptions{}
+	var topts hubInitTunnelOpts
 	cmd := &cobra.Command{
 		Use:   "init --advertise <url>",
 		Short: "Switch on the hub role here and enrol this machine as its first node",
 		Args:  noArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if err := topts.prepare(a, &opts); err != nil {
+				return err
+			}
 			if opts.AdvertiseURL == "" {
 				return usagef("--advertise is required, e.g. --advertise https://hub.example.com:7777")
 			}
@@ -49,6 +54,7 @@ func (a *app) hubInitCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("hub init: %w", err)
 			}
+			terr := topts.apply(opts.HubDir)
 			hubURL := res.AdvertiseURL
 			if hubURL == "" {
 				hubURL = opts.AdvertiseURL
@@ -60,9 +66,14 @@ func (a *app) hubInitCmd() *cobra.Command {
 				return err
 			}
 
+			// A hub behind a relay: this machine's CLI uses the local listener.
+			cliURL := hubURL
+			if res.LocalHubURL != "" {
+				cliURL = res.LocalHubURL
+			}
 			f, err := config.Load(dirs)
 			if err == nil {
-				f.HubURL = hubURL
+				f.HubURL = cliURL
 				f.APIKey = res.AdminAPIKey
 				f.CACertPEM = string(res.CACertPEM)
 				f.NodeName = res.LocalNodeName
@@ -70,6 +81,9 @@ func (a *app) hubInitCmd() *cobra.Command {
 			}
 			if err != nil {
 				return fmt.Errorf("hub initialised, but saving %s failed (keep the admin key printed above): %w", dirs.ConfigFile(), err)
+			}
+			if terr != nil {
+				return fmt.Errorf("hub initialised, but the tunnel or ACME settings failed (fix and run `mycel hub tunnel set`): %w", terr)
 			}
 			return nil
 		},
@@ -81,6 +95,7 @@ func (a *app) hubInitCmd() *cobra.Command {
 	f.StringVar(&opts.BusListen, "bus-listen", ":7778", "bus listen address")
 	f.StringVar(&opts.AdminName, "admin", "admin", "name of the first admin user")
 	f.StringVar(&opts.LocalNode, "node-name", "", "node name for this machine (default: hostname)")
+	topts.addFlags(f)
 	return cmd
 }
 

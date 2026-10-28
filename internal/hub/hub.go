@@ -39,7 +39,12 @@ type InitOptions struct {
 	BusListen    string // default ":7778"
 	AdminName    string // first admin user, default "admin"
 	LocalNode    string // name for this machine's node, default hostname
-	Logger       *slog.Logger
+	// LocalListeners makes this machine's node reach the hub through the
+	// local API and bus listeners instead of the advertise addresses (a
+	// hub behind a relay; InitResult.LocalHubURL is then the URL for this
+	// machine's CLI).
+	LocalListeners bool
+	Logger         *slog.Logger
 }
 
 // InitResult is returned by Init.
@@ -51,6 +56,9 @@ type InitResult struct {
 	AdminUserID   string
 	AdminAPIKey   string // shown once
 	LocalNodeName string
+	// LocalHubURL is the hub URL for this machine (the local API listener)
+	// with InitOptions.LocalListeners, "" otherwise.
+	LocalHubURL string
 }
 
 // Init creates the hub state. It fails if HubDir already holds a hub. It also

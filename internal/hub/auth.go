@@ -136,6 +136,7 @@ func resourceName(r policy.Resource) string {
 func (s *server) audit(ctx context.Context, actor, action, resource, outcome string, details map[string]any) {
 	// Audit even if the request context is already cancelled.
 	ctx = context.WithoutCancel(ctx)
+	details = markRelayedRemote(ctx, details)
 	if err := s.st.appendAudit(ctx, actor, action, resource, outcome, details); err != nil {
 		s.log.Error("audit write failed", "err", err, "action", action)
 	}

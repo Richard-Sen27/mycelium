@@ -15,6 +15,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/richard-sen27/mycelium/gen/mycel/v1/mycelv1connect"
+	"github.com/richard-sen27/mycelium/internal/identity"
 )
 
 // hubClient bundles the Connect clients for one hub.
@@ -111,7 +112,10 @@ func normalizeHubURL(u string) (string, error) {
 	return strings.TrimRight(u, "/"), nil
 }
 
-// pinnedHTTPClient trusts only the given CA, never the system roots.
+// pinnedHTTPClient trusts only the given CA, never the system roots (D026:
+// the API key must not reach a relay operator or anyone else with a public
+// certificate for the hub's name). Its hellos carry the identity.HubCAALPN
+// marker, so a hub with an ACME certificate presents its CA-issued one.
 func pinnedHTTPClient(caPEM []byte) (*http.Client, error) {
 	pool := x509.NewCertPool()
 	if !pool.AppendCertsFromPEM(caPEM) {
@@ -119,7 +123,7 @@ func pinnedHTTPClient(caPEM []byte) (*http.Client, error) {
 	}
 	tr := &http.Transport{
 		Proxy:               http.ProxyFromEnvironment,
-		TLSClientConfig:     &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12},
+		TLSClientConfig:     &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12, NextProtos: identity.HubClientNextProtos()},
 		ForceAttemptHTTP2:   true,
 		TLSHandshakeTimeout: 10 * time.Second,
 	}

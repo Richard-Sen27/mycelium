@@ -44,6 +44,7 @@ type server struct {
 	signer *identity.AgentTokenSigner
 	st     *store
 	bus    *bus.Server
+	tun    *tunnelState // phase 7: relay tunnel and ACME (tunnel.go)
 	nc     *nats.Conn
 	policy policy.Policy
 	log    *slog.Logger
@@ -119,6 +120,10 @@ func runHub(ctx context.Context, opts Options, ready chan<- Ready) (err error) {
 	if err != nil {
 		return fmt.Errorf("hub: server certificate: %w", err)
 	}
+	acmeCerts, err := newHubACME(dir, cfg, log)
+	if err != nil {
+		return err
+	}
 	agentKey, err := read(agentKeyFile)
 	if err != nil {
 		return err
@@ -158,6 +163,7 @@ func runHub(ctx context.Context, opts Options, ready chan<- Ready) (err error) {
 		events: newEventHub(),
 	}
 	st.onChange = s.events.emit
+	s.tun = &tunnelState{acme: acmeCerts}
 	defer s.ch.shutdown()
 	// Startup steps run to completion even if ctx is already cancelled.
 	startCtx := context.WithoutCancel(ctx)
@@ -189,6 +195,7 @@ func runHub(ctx context.Context, opts Options, ready chan<- Ready) (err error) {
 	bs, err := bus.StartServer(bus.ServerConfig{
 		Host: busHost, Port: busPort, TLSCert: srvCert, ClientCAs: ca.Pool(), TrustDomain: s.td,
 		StoreDir: filepath.Join(dir, jetStreamSubdir), Revocation: st, Logger: log,
+		GetCertificate: busGetCertificate(acmeCerts),
 	})
 	if err != nil {
 		return err
@@ -263,12 +270,16 @@ func runHub(ctx context.Context, opts Options, ready chan<- Ready) (err error) {
 		WriteTimeout:      60 * time.Second,
 		IdleTimeout:       120 * time.Second,
 		ErrorLog:          slog.NewLogLogger(log.Handler(), slog.LevelWarn),
+		ConnContext:       relayConnContext,
 	}
+	acmeCerts.Configure(httpSrv.TLSConfig, true)
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- httpSrv.ServeTLS(ln, "", "") }()
 
 	apiAddr := ln.Addr().String()
 	busAddr := net.JoinHostPort(localHost(busHost), strconv.Itoa(bs.Port()))
+	stopTunnel := s.startTunnel(ctx, httpSrv, busAddr)
+	defer stopTunnel()
 	log.Info("hub running", "api", apiAddr, "bus", busAddr, "trust_domain", s.td)
 	if ready != nil {
 		r := Ready{APIAddr: apiAddr, BusAddr: busAddr, HubURL: "https://" + localAddr(apiAddr)}
@@ -338,6 +349,7 @@ func (s *server) mux() http.Handler {
 		_, _ = w.Write([]byte("ok\n"))
 	})
 	s.uiAPIRoutes(mux)
+	s.tunnelRoutes(mux)
 	return noStore(mux)
 }
 
