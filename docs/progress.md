@@ -90,23 +90,23 @@ Open issues: no GPU on this Mac; GPU broker tests use a fake NVML/nvidia-smi.
 
 ## Phase 6 — UI
 
-Status: contracts written (proto/mycel/v1/ui.proto, internal/web, internal/hub/uiapi.go, internal/daemon/localapi.go phase 6, buf.gen.web.yaml, D025); packages not started
+Status: in progress (app shell merged; backend and the two views packages in progress)
 
 | Package | Owns | State | Notes |
 | --- | --- | --- | --- |
-| P6-api | `internal/hub` (events, search, audit, passkeys, push, node read scope, SPA serving), `internal/daemon` (SPA serving, hub proxy), `internal/cli` (ui, audit, search) | todo | round 1 |
-| P6-web-core | `web/` toolchain, generated client, design system, shell, routing, sign-in, command bar, PWA shell | todo | round 1 |
-| P6-views-a | `web/` constellation (r3f chunk), lists and search, nodes, agents | todo | round 2 |
-| P6-views-b | `web/` channels, approvals, sandbox inspector, traces and cost | todo | round 2 |
+| P6-api | `internal/hub` (events, search, audit, passkeys, push, node read scope, SPA serving), `internal/daemon` (SPA serving, hub proxy), `internal/cli` (ui, audit, search) | in progress | round 1 |
+| P6-web-core | `web/` toolchain, generated client, design system, shell, routing, sign-in, command bar, PWA shell | merged | round 1 |
+| P6-views-a | `web/` constellation (r3f chunk), lists and search, nodes, agents | in progress | round 2 |
+| P6-views-b | `web/` channels, approvals, sandbox inspector, traces and cost | in progress | round 2 |
 | P6-e2e | `test/**`, `web/` size check and smoke test | todo | round 3 |
 
 ## Phase 7 — Team rollout
 
-Status: contracts written (node.proto Redirect, internal/tunnel, internal/discovery, internal/service, internal/hub/moving.go, identity redirect stubs, hub.yaml sections, D026); packages not started
+Status: in progress (contracts written; install package in progress; relay and move packages start after the phase 6 backend merges)
 
 | Package | Owns | State | Notes |
 | --- | --- | --- | --- |
 | P7-relay | `internal/tunnel` (relay server, hub client, ACME), `mycel relay`, hub tunnel wiring | todo | round 1 |
 | P7-move | `internal/discovery`, join discovery, Redirect ctl and following (node, CLI, join), `identity.SignRedirect/VerifyRedirect`, hub export/import/redirect | todo | round 1 |
-| P7-install | `scripts/`, `internal/service`, `.goreleaser.yaml`, release workflow, docs/quickstart.md, scripts/demo.sh | todo | round 1 |
+| P7-install | `scripts/`, `internal/service`, `.goreleaser.yaml`, release workflow, docs/quickstart.md, scripts/demo.sh | in progress | round 1 |
 | P7-e2e | `test/**` (relay tunnel, discovery with a fake browser, export/import/redirect follow, install script dry runs, demo walkthrough) | todo | round 2 |

@@ -113,11 +113,16 @@ package daemon
 //	       hub cannot be reached, so the UI shows its last known network view
 //	       marked stale.
 //
-//	Sign-in: `mycel ui` reads <NodeDir>/local.token and opens
-//	http://<local addr>/#local=<token>; the app moves the token into
-//	sessionStorage, strips the fragment and sends it as the local bearer. The
-//	token is scoped to network:read (via the proxy) and node:self:restrict (the
-//	phase 2–5 local routes), exactly the rights of the local API.
+//	Sign-in: `mycel ui` reads <NodeDir>/local.token, calls
+//	POST /api/local/ui-code (local token) -> {"code":"<32 random bytes, base64url>","expires_in":60}
+//	and opens http://<local addr>/#code=<code>; the app strips the fragment and
+//	calls POST /api/local/ui-session (no auth) with {"code":...} -> {"token":"<local token>"}
+//	(single use, 60 s, at most 8 outstanding codes, 404 after use or expiry),
+//	then keeps the token in sessionStorage and sends it as the local bearer.
+//	The token never appears on a command line, in a URL or in logs. It is
+//	scoped to network:read (via the proxy) and node:self:restrict (the phase
+//	2–5 local routes), exactly the rights of the local API. `#local=<token>`
+//	is still accepted by the app for tests and `mycel ui --print`.
 //
 // Every local request is logged at debug; agent tokens never appear in logs.
 
