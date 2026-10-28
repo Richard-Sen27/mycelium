@@ -56,7 +56,7 @@ type InitResult struct {
 // Init creates the hub state. It fails if HubDir already holds a hub. It also
 // enrols the local machine as a node owned by the admin, writing the node
 // state into NodeDir (docs/decisions.md D006).
-func Init(ctx context.Context, opts InitOptions) (*InitResult, error) { panic(ErrNotImplemented) }
+func Init(ctx context.Context, opts InitOptions) (*InitResult, error) { return initHub(ctx, opts) }
 
 // Options configures the running hub role.
 type Options struct {
@@ -77,4 +77,6 @@ type Ready struct {
 
 // Run starts the hub role and blocks until ctx is done or a fatal error
 // occurs. If ready is non-nil it receives one Ready once the listeners are up.
-func Run(ctx context.Context, opts Options, ready chan<- Ready) error { panic(ErrNotImplemented) }
+func Run(ctx context.Context, opts Options, ready chan<- Ready) error {
+	return runHub(ctx, opts, ready)
+}

@@ -80,4 +80,64 @@ type Policy interface {
 //     agents they own, and create API keys for themselves;
 //   - nodes and agents may do nothing through this interface in phase 1;
 //   - anything else is denied.
-func Default() Policy { panic("policy: not implemented") }
+func Default() Policy { return defaultPolicy{} }
+
+// knownActions is the phase 1 action set. Actions outside it are denied for
+// everyone, admins included, so that a new action is never allowed by
+// accident before its rule is written.
+var knownActions = map[Action]bool{
+	ActionTokenCreate:  true,
+	ActionTokenList:    true,
+	ActionTokenRevoke:  true,
+	ActionNodeList:     true,
+	ActionNodeGet:      true,
+	ActionNodeRemove:   true,
+	ActionNodeSetCaps:  true,
+	ActionUserCreate:   true,
+	ActionUserList:     true,
+	ActionUserRemove:   true,
+	ActionAPIKeyCreate: true,
+	ActionAgentList:    true,
+	ActionAgentRevoke:  true,
+}
+
+type defaultPolicy struct{}
+
+func allow() Decision { return Decision{Allow: true} }
+
+func deny(reason string) Decision { return Decision{Allow: false, Reason: reason} }
+
+// Authorize implements Policy.
+func (defaultPolicy) Authorize(_ context.Context, p Principal, a Action, r Resource) Decision {
+	if !knownActions[a] {
+		return deny("unknown action")
+	}
+	if p.Kind != KindUser || p.ID == "" {
+		return deny("only users may perform this action")
+	}
+	switch p.Role {
+	case RoleAdmin:
+		return allow()
+	case RoleMember:
+	default:
+		return deny("unknown role")
+	}
+	owns := r.OwnerID != "" && r.OwnerID == p.ID
+	switch a {
+	case ActionTokenCreate, ActionTokenList, ActionNodeList, ActionNodeGet,
+		ActionUserList, ActionAgentList:
+		return allow()
+	case ActionTokenRevoke, ActionNodeRemove, ActionNodeSetCaps, ActionAgentRevoke:
+		if owns {
+			return allow()
+		}
+		return deny("only the owner or an admin may do this")
+	case ActionAPIKeyCreate:
+		if r.ID != "" && r.ID == p.ID {
+			return allow()
+		}
+		return deny("members may only create API keys for themselves")
+	default:
+		return deny("admin role required")
+	}
+}
