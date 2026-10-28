@@ -38,14 +38,14 @@ Open issues: none.
 
 ## Phase 3 — Orchestrator and local workers
 
-Status: in progress (round 1: hub, daemon spawn, MCP/CLI)
+Status: done locally (all packages merged, 3 phase-3 acceptance tests green on macOS plus the hardened phase 1–2 suite; CI matrix pending the owner)
 
 | Package | Owns | Status | Notes |
 | --- | --- | --- | --- |
 | P3-hub | `internal/hub`, `internal/policy` | in progress | agent lifecycle, budgets, usage accounting, pause/resume/stop, AgentService phase 3 methods, paused-agent RPC refusals, EVENTs |
 | P3-daemon-spawn | `internal/daemon` | in progress | spawn endpoint, worker processes, usage parsers, AgentCtl, workers listing |
 | P3-mcp-cli | `internal/adapters/mcp`, `internal/cli`, `harnesses` | in progress | spawn_agent/list_workers/stop_agent tools, `mycel agents` lifecycle commands, spawn sections for claude-code, codex, gemini-cli, fake manifest, `mycel fakeharness` (build tag) |
-| P3-e2e | `test/**` | todo | orchestrator spawns two workers; exhausted budget pauses them; also folds in the phase 2 test review fixes (bus refusal check, race reports from children, explicit ping-pong chain, #alerts reason, goroutine and port hygiene) |
+| P3-e2e | `test/**` | merged | orchestrator spawns two workers; exhausted budget pauses them; also folds in the phase 2 test review fixes (bus refusal check, race reports from children, explicit ping-pong chain, #alerts reason, goroutine and port hygiene) |
 
 Acceptance (from spec): an orchestrator spawns two local workers that join a channel and report results; an exhausted budget pauses them.
 
@@ -53,14 +53,14 @@ Open issues: none.
 
 ## Phase 4 — Sandboxes and jobs
 
-Status: contracts merged (D021); implementation starts when phase 3 acceptance passes
+Status: in progress (round 1: sandbox core, egress, hub jobs, MCP/CLI)
 
 | Package | Owns | Status | Notes |
 | --- | --- | --- | --- |
-| P4-sandbox-core | `internal/sandbox` (Select, limits, mounts, runner), `internal/sandbox/fake`, `profiles/` loader | todo | round 1 |
-| P4-egress | `internal/broker/egress` | todo | round 1 |
-| P4-jobs-hub | `internal/hub`, `internal/policy` (profiles, JobService, ArtifactService, scheduler, logs, node RPCs, agent RPCs) | todo | round 1 |
-| P4-mcp-cli | `internal/adapters/mcp`, `internal/cli` (run_job, artifacts tools; job/artifacts/profiles commands) | todo | round 1 |
+| P4-sandbox-core | `internal/sandbox` (Select, limits, mounts, runner), `internal/sandbox/fake`, `profiles/` loader | in progress | round 1 |
+| P4-egress | `internal/broker/egress` | in progress | round 1 |
+| P4-jobs-hub | `internal/hub`, `internal/policy` (profiles, JobService, ArtifactService, scheduler, logs, node RPCs, agent RPCs) | in progress | round 1 |
+| P4-mcp-cli | `internal/adapters/mcp`, `internal/cli` (run_job, artifacts tools; job/artifacts/profiles commands) | in progress | round 1 |
 | P4-daemon-jobs | `internal/daemon` (CreateSandbox/KillSandbox, runner integration, egress proxy, artifact transfer, local artifact endpoints) | todo | round 2 |
 | P4-applevf | `internal/sandbox/applevf` (Lima first, Apple `container` when present) | todo | round 2; testable on this Mac |
 | P4-wsl2 | `internal/sandbox/wsl2` | todo | round 2; untested here |
