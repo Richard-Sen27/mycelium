@@ -27,7 +27,7 @@ import (
 const (
 	uiSessionCookie = "mycel_session"
 	uiLoginCookie   = "mycel_login"
-	uiSessionTTL    = 12 * time.Hour
+	uiSessionTTL    = 24 * time.Hour
 	uiLoginTTL      = 15 * time.Minute
 	maxUISessions   = 1024
 	maxUserSessions = 8
@@ -139,6 +139,20 @@ func (u *uiState) takeFlash(id string) string {
 	return f
 }
 
+// dropUser ends every session of a user and reports how many there were.
+func (u *uiState) dropUser(userID string) int {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	n := 0
+	for id, s := range u.sessions {
+		if s.userID == userID {
+			delete(u.sessions, id)
+			n++
+		}
+	}
+	return n
+}
+
 func (u *uiState) drop(id string) {
 	u.mu.Lock()
 	defer u.mu.Unlock()
@@ -178,8 +192,10 @@ func setCookie(w http.ResponseWriter, name, value, path string, ttl time.Duratio
 // sameOrigin refuses cross-site form posts when the browser says where
 // they came from (defence in depth next to SameSite and the CSRF token).
 func sameOrigin(r *http.Request) bool {
-	if o := r.Header.Get("Origin"); o != "" && o != "null" {
-		return strings.TrimPrefix(strings.TrimPrefix(o, "https://"), "http://") == r.Host
+	if o := r.Header.Get("Origin"); o != "" {
+		// The full origin (scheme and host); "null" (sandboxed frames,
+		// some redirects) is cross-site.
+		return o != "null" && strings.EqualFold(o, "https://"+r.Host)
 	}
 	if site := r.Header.Get("Sec-Fetch-Site"); site != "" && site != "same-origin" && site != "none" {
 		return false
@@ -275,9 +291,8 @@ func (s *server) uiLogin(w http.ResponseWriter, r *http.Request) {
 		retry(http.StatusUnauthorized, "That API key is not valid.")
 		return
 	}
-	id, _ := s.ui.newSession(u.ID)
 	setCookie(w, uiLoginCookie, "", "/ui/login", 0)
-	setCookie(w, uiSessionCookie, id, "/ui", uiSessionTTL)
+	s.startSession(w, u) // one session for /ui/* and the app
 	s.audit(r.Context(), u.ID, "ui.login", "ui", outcomeOK, map[string]any{"remote": remoteIP(r.RemoteAddr)})
 	http.Redirect(w, r, "/ui/approvals", http.StatusSeeOther)
 }
@@ -317,7 +332,7 @@ func (s *server) uiLogout(w http.ResponseWriter, r *http.Request) {
 		s.ui.drop(id)
 		s.audit(r.Context(), u.ID, "ui.logout", "ui", outcomeOK, nil)
 	}
-	setCookie(w, uiSessionCookie, "", "/ui", 0)
+	clearSessionCookie(w)
 	http.Redirect(w, r, "/ui/login", http.StatusSeeOther)
 }
 

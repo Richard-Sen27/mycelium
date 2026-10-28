@@ -102,7 +102,10 @@ func (n *node) httpHandler() http.Handler {
 		w.Header().Set("Cache-Control", "no-store")
 		_ = json.NewEncoder(w).Encode(n.status())
 	})
-	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
+		if serveApp(w, r) {
+			return
+		}
 		s := n.status()
 		inv := ""
 		if string(s.Inventory) != "null" {
@@ -124,6 +127,7 @@ func (n *node) httpHandler() http.Handler {
 	if n.local != nil {
 		n.local.register(mux)
 	}
+	n.uiRoutes(mux)
 	return securityHeaders(mux)
 }
 

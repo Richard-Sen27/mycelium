@@ -34,6 +34,7 @@ type hubClient struct {
 	arts      mycelv1connect.ArtifactServiceClient
 	grants    mycelv1connect.GrantServiceClient
 	control   mycelv1connect.ControlServiceClient
+	events    mycelv1connect.EventServiceClient
 	// raw carries artifact bytes over plain HTTPS (PUT/GET /api/artifacts):
 	// the pinned CA, no overall timeout; authz is its Authorization header.
 	raw   *http.Client
@@ -92,6 +93,7 @@ func newHubClient(hubURL, apiKey string, caPEM []byte) (*hubClient, error) {
 		arts:      mycelv1connect.NewArtifactServiceClient(hc, base, opts),
 		grants:    mycelv1connect.NewGrantServiceClient(hc, base, opts),
 		control:   mycelv1connect.NewControlServiceClient(hc, base, opts),
+		events:    mycelv1connect.NewEventServiceClient(hc, base, opts),
 		raw:       &sc,
 		authz:     bearer{header: "Bearer " + apiKey},
 	}, nil

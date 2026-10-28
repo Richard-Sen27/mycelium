@@ -35,6 +35,8 @@ type Config struct {
 	CreatedAt    string `yaml:"created_at"`
 	// Grants holds the auto-approval rules (phase 5).
 	Grants GrantsConfig `yaml:"grants,omitempty"`
+	// UI configures the browser UI (phase 6, uiserve.go).
+	UI UIConfig `yaml:"ui,omitempty"`
 	// Phase 7 (contracts: internal/tunnel, internal/discovery, moving.go).
 	Tunnel    tunnel.Config     `yaml:"tunnel,omitempty"`
 	ACME      tunnel.ACMEConfig `yaml:"acme,omitempty"`
@@ -48,6 +50,18 @@ type Config struct {
 type DiscoveryConfig struct {
 	// MDNS advertises the hub on the local network; nil means true.
 	MDNS *bool `yaml:"mdns,omitempty"`
+}
+
+// UIConfig is the ui section of hub.yaml.
+type UIConfig struct {
+	// ExternalURL is the address people open in a browser; default
+	// advertise_url (or the API listen address).
+	ExternalURL string `yaml:"external_url,omitempty"`
+	// RPID is the WebAuthn relying party id; default the external URL's host.
+	RPID string `yaml:"rp_id,omitempty"`
+	// Origins are the browser origins allowed for passkeys and cookie
+	// requests; default the external URL's origin.
+	Origins []string `yaml:"origins,omitempty"`
 }
 
 // GrantsConfig is the grants section of hub.yaml.

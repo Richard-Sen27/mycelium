@@ -190,6 +190,12 @@ type localAPI struct {
 	workers  map[string]*worker // by agent name, including exited ones for a while
 
 	cursorMu sync.Mutex // guards cursor read-modify-write
+
+	// Phase 6: the hub proxy's client (hubproxy.go) and the UI sign-in
+	// codes (uiserve.go).
+	proxyOnce sync.Once
+	proxyHC   *http.Client
+	uiCodes   uiCodeStore
 }
 
 // keyedLock is a set of per-key locks that can be abandoned on ctx done.
@@ -342,6 +348,10 @@ func (s *statusRecorder) WriteHeader(code int) {
 	s.code = code
 	s.ResponseWriter.WriteHeader(code)
 }
+
+// Unwrap lets http.ResponseController reach the connection (flushing
+// proxied streams).
+func (s *statusRecorder) Unwrap() http.ResponseWriter { return s.ResponseWriter }
 
 // logRequests logs each local request at debug. Only the method, the route
 // pattern (never the session id) and the status are logged.

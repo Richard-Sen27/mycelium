@@ -27,6 +27,7 @@ import (
 	"github.com/richard-sen27/mycelium/internal/bus"
 	"github.com/richard-sen27/mycelium/internal/daemon"
 	"github.com/richard-sen27/mycelium/internal/identity"
+	"github.com/richard-sen27/mycelium/internal/web"
 )
 
 func quietLogger() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) }
@@ -433,7 +434,11 @@ func TestHubEndToEnd(t *testing.T) {
 
 	// Misc HTTP endpoints.
 	hc := h.httpClient(nil)
-	for path, want := range map[string]string{"/ca.pem": "BEGIN CERTIFICATE", "/healthz": "ok", "/": "Mycelium hub localhost"} {
+	root := "Mycelium hub localhost" // without a UI build; the app's page with one
+	if web.Built() {
+		root = `<div id="root">`
+	}
+	for path, want := range map[string]string{"/ca.pem": "BEGIN CERTIFICATE", "/healthz": "ok", "/": root} {
 		resp, err := hc.Get(h.ready.HubURL + path)
 		if err != nil {
 			t.Fatal(err)

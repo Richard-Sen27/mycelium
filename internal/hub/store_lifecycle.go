@@ -129,6 +129,7 @@ func (s *store) addUsage(ctx context.Context, node, id string, tokens int64, usd
 	if err != nil {
 		return nil, nil, err
 	}
+	s.changed(kindAgent, opUpdated, id, nil)
 	return a, u, nil
 }
 
@@ -164,6 +165,9 @@ func (s *store) setAgentState(ctx context.Context, id, state, reason string) (bo
 		return false, err
 	}
 	n, _ := res.RowsAffected()
+	if n > 0 {
+		s.changed(kindAgent, opUpdated, id, nil)
+	}
 	return n > 0, nil
 }
 
@@ -171,7 +175,7 @@ func (s *store) setAgentState(ctx context.Context, id, state, reason string) (bo
 func (s *store) setAgentBudget(ctx context.Context, id string, tokens int64, usd float64) error {
 	_, err := s.db.ExecContext(ctx, `UPDATE agents SET budget_tokens = ?, budget_usd = ?, budget_set_by = 'operator'
 		WHERE id = ? AND revoked_at IS NULL`, tokens, usd, id)
-	return err
+	return s.changedOn(kindAgent, id, err)
 }
 
 // setAgentExited records the end of an agent's run: stopped, with any pause
@@ -179,7 +183,7 @@ func (s *store) setAgentBudget(ctx context.Context, id string, tokens int64, usd
 func (s *store) setAgentExited(ctx context.Context, id string, code int32) error {
 	_, err := s.db.ExecContext(ctx, `UPDATE agents SET state = 'stopped', exited_at = ?, exit_code = ?
 		WHERE id = ? AND revoked_at IS NULL`, nowString(), code, id)
-	return err
+	return s.changedOn(kindAgent, id, err)
 }
 
 // agentsByHome lists the unrevoked agents whose home channel is channel.

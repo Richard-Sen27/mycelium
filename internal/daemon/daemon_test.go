@@ -22,6 +22,7 @@ import (
 	mycelv1 "github.com/richard-sen27/mycelium/gen/mycel/v1"
 	"github.com/richard-sen27/mycelium/internal/bus"
 	"github.com/richard-sen27/mycelium/internal/identity"
+	"github.com/richard-sen27/mycelium/internal/web"
 )
 
 // ---- Join ----
@@ -413,7 +414,11 @@ func TestRunConnectHeartbeatAndCtl(t *testing.T) {
 	}
 	body, _ := io.ReadAll(res.Body)
 	_ = res.Body.Close()
-	if res.StatusCode != http.StatusOK || !strings.Contains(string(body), "node n1") {
+	want := "node n1" // the status page without a UI build; the app with one
+	if web.Built() {
+		want = `<div id="root">`
+	}
+	if res.StatusCode != http.StatusOK || !strings.Contains(string(body), want) {
 		t.Fatalf("index: %d %s", res.StatusCode, body)
 	}
 

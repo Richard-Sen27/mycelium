@@ -11,7 +11,7 @@ import (
 
 func (a *app) hubCmd() *cobra.Command {
 	cmd := groupCmd("hub", "Manage the hub role on this machine")
-	cmd.AddCommand(a.hubInitCmd())
+	cmd.AddCommand(a.hubInitCmd(), a.hubUIURLCmd())
 	return cmd
 }
 

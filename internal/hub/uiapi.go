@@ -26,6 +26,7 @@ package hub
 // /ui/login for the unauthenticated ones):
 //   GET    /api/auth/me                      → {"user_id","name","role","csrf","passkeys":[{"id","name","created_at","last_used_at"}]}
 //   POST   /api/auth/logout                  → 204; ends the session
+//   POST   /api/auth/logout-all              → 204; ends every session of the caller (all devices)
 //   POST   /api/auth/passkey/register/begin  → WebAuthn PublicKeyCredentialCreationOptions (go-webauthn JSON); body {"name":"<label>"}
 //   POST   /api/auth/passkey/register/finish → 201 {"id"}; body: the browser's credential JSON
 //   POST   /api/auth/passkey/login/begin     → (no session) PublicKeyCredentialRequestOptions for discoverable credentials; body {} or {"user":"<name>"}
@@ -36,7 +37,8 @@ package hub
 // external URL). Credentials are stored per user (id, public key, sign
 // count, transports, name, created, last used); sign counts are checked.
 // User verification is preferred, resident keys required (discoverable
-// login). Challenges live 2 minutes, one pending per session or IP.
+// login). Challenges live 2 minutes, one pending per session (registration)
+// or per login-ceremony cookie (login); the login rate limit is per IP.
 //
 // Push (JSON, session required):
 //   GET    /api/push/vapid          → {"public_key":"<base64url>"}
@@ -60,14 +62,19 @@ package hub
 // its phase 1–5 node RPC rights and no user rights.
 //
 // EventService (proto/mycel/v1/ui.proto): WatchEvents fans out from the
-// hub's row changes (one in-memory ring of the last 10 000 events or 1 h,
-// whichever is smaller; after_seq older than the ring → FailedPrecondition
-// "too old"), filtered per caller by the same visibility as the List RPCs;
-// a heartbeat every 15 s; at most 4 streams per user and 1 per node scope.
-// Search runs over SQLite (names, titles and message bodies via LIKE or
-// FTS5) with the caller's visibility. ListAudit reads the AUDIT stream (or
-// a SQLite mirror of it); members only see entries whose actor is
-// themselves, their nodes or their agents; admins see everything.
+// hub's row changes (one in-memory ring of the last 10 000 events, 1 h or
+// 64 MiB, whichever is smallest; after_seq older than the ring →
+// FailedPrecondition "too old"), filtered per caller by the same visibility
+// as the List RPCs, except that a direct channel's messages reach only its
+// members (admins open DMs through ListMessages/Watch, which audit); the
+// first message is a heartbeat carrying the resume seq, then one every
+// 15 s, on which the session, role and node certificate are re-checked; at
+// most 4 streams per user and 4 per node scope (not counted against the
+// owner). Search runs over SQLite (LIKE, message bodies in seq windows),
+// 10 per second per user, with the caller's visibility. ListAudit reads the
+// SQLite table the AUDIT stream mirrors; each row records the user who owns
+// its actor (the user, a node's or an agent's owner); members see the rows
+// they own, admins everything (rows from before phase 6: admins only).
 //
 // Security headers: every SPA response carries web.Headers; the Connect and
 // JSON routes add `Cache-Control: no-store`. The hub's existing HTTP server

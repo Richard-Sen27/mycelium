@@ -61,6 +61,9 @@ func (gs *grantService) ListGrants(ctx context.Context, req *connect.Request[myc
 	if err != nil {
 		return nil, s.internalError("list grants", err)
 	}
+	if err := s.withUsage(ctx, rows...); err != nil {
+		return nil, err
+	}
 	return connect.NewResponse(&mycelv1.ListGrantsResponse{Grants: rows}), nil
 }
 
@@ -81,7 +84,11 @@ func (gs *grantService) GetGrant(ctx context.Context, req *connect.Request[mycel
 	if !ok {
 		return nil, connect.NewError(connect.CodePermissionDenied, errors.New(reason))
 	}
-	return connect.NewResponse(&mycelv1.GetGrantResponse{Grant: proto.CloneOf(g)}), nil
+	out := proto.CloneOf(g)
+	if err := s.withUsage(ctx, out); err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&mycelv1.GetGrantResponse{Grant: out}), nil
 }
 
 func (gs *grantService) ApproveGrant(ctx context.Context, req *connect.Request[mycelv1.ApproveGrantRequest]) (*connect.Response[mycelv1.ApproveGrantResponse], error) {

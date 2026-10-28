@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -103,6 +104,8 @@ type fakeHub struct {
 	storeDir   string
 	http       *httptest.Server
 	arts       *fakeArtifacts
+	// connect, when set, serves the Connect paths (hub proxy tests).
+	connect atomic.Value // http.Handler
 
 	mu           sync.Mutex
 	bus          *bus.Server
@@ -149,6 +152,11 @@ func newFakeHub(t *testing.T) *fakeHub {
 	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.TLS != nil && len(r.TLS.PeerCertificates) > 0 {
 			r = r.WithContext(context.WithValue(r.Context(), peerKey{}, r.TLS.PeerCertificates[0]))
+		}
+		if hc, ok := h.connect.Load().(http.Handler); ok && strings.HasPrefix(r.URL.Path, "/mycel.v1.") &&
+			!strings.HasPrefix(r.URL.Path, "/mycel.v1.EnrolService/") {
+			hc.ServeHTTP(w, r)
+			return
 		}
 		mux.ServeHTTP(w, r)
 	}))

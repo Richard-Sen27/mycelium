@@ -15,10 +15,44 @@ import { anonymousRights, csrfToken, setHubStatus, useConnection, useSession, ty
 
 let stream: EventStream | null = null;
 
+/**
+ * takeFragmentCode reads a `#code=<single-use code>` fragment (what
+ * `mycel ui` opens) and strips the fragment. Returns null when there is none.
+ */
+export function takeFragmentCode(
+  loc: Pick<Location, 'hash' | 'pathname' | 'search'> = window.location,
+  hist: Pick<History, 'replaceState' | 'state'> = window.history,
+): string | null {
+  const hash = loc.hash.startsWith('#') ? loc.hash.slice(1) : loc.hash;
+  if (!hash) return null;
+  const code = new URLSearchParams(hash).get('code');
+  if (code === null) return null;
+  hist.replaceState(hist.state, '', loc.pathname + loc.search);
+  const c = code.trim();
+  return c === '' ? null : c;
+}
+
+/** redeemCode trades a sign-in code for the local token (null when refused). */
+export async function redeemCode(code: string): Promise<string | null> {
+  try {
+    const res = await fetch('/api/local/ui-session', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code }),
+    });
+    if (!res.ok) return null;
+    const body = (await res.json()) as { token?: unknown };
+    return typeof body.token === 'string' && body.token !== '' ? body.token : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function boot(): Promise<void> {
-  // Strip a #local=<token> fragment before anything else, whatever the mode,
-  // so the token never lingers in the address bar or history.
+  // Strip a #local=<token> or #code=<code> fragment before anything else,
+  // whatever the mode, so neither lingers in the address bar or history.
   const fragmentToken = takeFragmentToken();
+  const fragmentCode = fragmentToken ? null : takeFragmentCode();
   let config: UIConfig;
   try {
     config = await fetchUIConfig();
@@ -30,6 +64,10 @@ export async function boot(): Promise<void> {
 
   if (config.mode === 'node') {
     if (fragmentToken) storeLocalToken(fragmentToken);
+    else if (fragmentCode) {
+      const token = await redeemCode(fragmentCode);
+      if (token) storeLocalToken(token);
+    }
     configureEntityStores({ persist: true, scope: config.hub ?? '' });
     const api = makeNodeApi({ getToken: () => readLocalToken(), onHubStatus: setHubStatus });
     setApi(api);

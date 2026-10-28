@@ -241,7 +241,7 @@ func addMemberTx(ctx context.Context, tx *sql.Tx, channel, member, role, addedBy
 // createChannel inserts a channel with its first members. errConflict if the
 // name exists.
 func (s *store) createChannel(ctx context.Context, c *channelRow, members []memberRow) error {
-	return s.inTx(ctx, func(tx *sql.Tx) error {
+	err := s.inTx(ctx, func(tx *sql.Tx) error {
 		if _, err := insertChannelTx(ctx, tx, c, false); err != nil {
 			return err
 		}
@@ -252,6 +252,10 @@ func (s *store) createChannel(ctx context.Context, c *channelRow, members []memb
 		}
 		return nil
 	})
+	if err == nil {
+		s.changed(kindChannel, opCreated, c.Name, nil)
+	}
+	return err
 }
 
 // ensureChannel creates a channel (and members) unless the name exists and
@@ -271,6 +275,9 @@ func (s *store) ensureChannel(ctx context.Context, c *channelRow, members []memb
 		}
 		return nil
 	})
+	if err == nil && created {
+		s.changed(kindChannel, opCreated, c.Name, nil)
+	}
 	return created, err
 }
 
@@ -311,6 +318,7 @@ func (s *store) setChannelPolicy(ctx context.Context, name string, p *mycelv1.Ch
 	if n, _ := res.RowsAffected(); n == 0 {
 		return errNotFound
 	}
+	s.changed(kindChannel, opUpdated, name, nil)
 	return nil
 }
 
@@ -322,6 +330,7 @@ func (s *store) archiveChannel(ctx context.Context, name string) error {
 	if n, _ := res.RowsAffected(); n == 0 {
 		return errNotFound
 	}
+	s.changed(kindChannel, opUpdated, name, nil)
 	return nil
 }
 
@@ -371,12 +380,12 @@ func (s *store) getMember(ctx context.Context, channel, member string) (*memberR
 
 // addMember adds a member, or changes the role of an existing one.
 func (s *store) addMember(ctx context.Context, channel, member, role, addedBy string) error {
-	return s.inTx(ctx, func(tx *sql.Tx) error { return addMemberTx(ctx, tx, channel, member, role, addedBy) })
+	return s.changedOn(kindChannel, channel, s.inTx(ctx, func(tx *sql.Tx) error { return addMemberTx(ctx, tx, channel, member, role, addedBy) }))
 }
 
 // removeMember drops a member and its subscription; errNotFound if absent.
 func (s *store) removeMember(ctx context.Context, channel, member string) error {
-	return s.inTx(ctx, func(tx *sql.Tx) error {
+	return s.changedOn(kindChannel, channel, s.inTx(ctx, func(tx *sql.Tx) error {
 		res, err := tx.ExecContext(ctx, `DELETE FROM channel_members WHERE channel = ? AND member = ?`, channel, member)
 		if err != nil {
 			return err
@@ -386,7 +395,7 @@ func (s *store) removeMember(ctx context.Context, channel, member string) error 
 		}
 		_, err = tx.ExecContext(ctx, `DELETE FROM subscriptions WHERE channel = ? AND agent = ?`, channel, member)
 		return err
-	})
+	}))
 }
 
 func (s *store) setSubscription(ctx context.Context, channel, agent string, sub *mycelv1.Subscription) error {
@@ -437,7 +446,7 @@ func (s *store) insertMessage(ctx context.Context, m *mycelv1.Message) error {
 	if err != nil {
 		return err
 	}
-	return s.inTx(ctx, func(tx *sql.Tx) error {
+	err = s.inTx(ctx, func(tx *sql.Tx) error {
 		res, err := tx.ExecContext(ctx, `INSERT INTO messages(id, channel, thread, sender, msg, ts) VALUES(?,?,?,?,?,?)`,
 			m.GetId(), m.GetChannel(), m.GetThread(), m.GetFrom(), b, m.GetTs())
 		if isUnique(err) {
@@ -453,9 +462,17 @@ func (s *store) insertMessage(ctx context.Context, m *mycelv1.Message) error {
 		if _, err := tx.ExecContext(ctx, `UPDATE channels SET last_seq = ? WHERE name = ?`, seq, m.GetChannel()); err != nil {
 			return err
 		}
+		if err := indexMessageTx(ctx, tx, seq, m); err != nil {
+			return err
+		}
 		m.Seq = uint64(seq) //nolint:gosec // autoincrement is positive
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+	s.changed(kindMessage, opCreated, m.GetId(), proto.CloneOf(m))
+	return nil
 }
 
 func decodeMessage(seq uint64, b []byte) (*mycelv1.Message, error) {

@@ -7,7 +7,6 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
-	"html"
 	"log/slog"
 	"net"
 	"net/http"
@@ -73,6 +72,12 @@ type server struct {
 	freeze *freezeState
 	syncs  *syncState
 	ui     *uiState
+
+	// Phase 6: the UI's event stream, passkeys and push (uiapi.go).
+	events   *eventHub
+	uiCfg    uiSettings
+	passkeys *passkeyState // nil when no valid RP id can be derived
+	push     *pushState
 }
 
 func runHub(ctx context.Context, opts Options, ready chan<- Ready) (err error) {
@@ -150,7 +155,9 @@ func runHub(ctx context.Context, opts Options, ready chan<- Ready) (err error) {
 		lifeLimit:  newRateLimiter(lifeReportsPerMinute, lifeReportsBurst),
 		dir:        dir, allowFake: opts.AllowFakeProfile, jobs: newJobState(newJobConfig),
 		grants: newGrantState(gcfg, rules), freeze: newFreezeState(), syncs: newSyncState(), ui: newUIState(),
+		events: newEventHub(),
 	}
+	st.onChange = s.events.emit
 	defer s.ch.shutdown()
 	// Startup steps run to completion even if ctx is already cancelled.
 	startCtx := context.WithoutCancel(ctx)
@@ -239,6 +246,10 @@ func runHub(ctx context.Context, opts Options, ready chan<- Ready) (err error) {
 	if err != nil {
 		return fmt.Errorf("hub: api listen: %w", err)
 	}
+	s.setupUI(ln.Addr().String())
+	defer s.push.close()
+	stopEvents := s.startEvents()
+	defer stopEvents()
 	httpSrv := &http.Server{
 		Handler: s.authMiddleware(s.mux()),
 		TLSConfig: &tls.Config{
@@ -300,7 +311,7 @@ func localAddr(addr string) string {
 
 func (s *server) mux() http.Handler {
 	mux := http.NewServeMux()
-	opts := []connect.HandlerOption{connect.WithReadMaxBytes(maxRequestBytes)}
+	opts := []connect.HandlerOption{connect.WithReadMaxBytes(maxRequestBytes), connect.WithInterceptors(scopeInterceptor{s})}
 	mux.Handle(mycelv1connect.NewTokenServiceHandler(&tokenService{s}, opts...))
 	mux.Handle(mycelv1connect.NewNodeServiceHandler(&nodeService{s}, opts...))
 	mux.Handle(mycelv1connect.NewUserServiceHandler(&userService{s}, opts...))
@@ -313,6 +324,8 @@ func (s *server) mux() http.Handler {
 	mux.Handle(mycelv1connect.NewArtifactServiceHandler(&artifactService{s}, opts...))
 	mux.Handle(mycelv1connect.NewGrantServiceHandler(&grantService{s}, opts...))
 	mux.Handle(mycelv1connect.NewControlServiceHandler(&controlService{s}, opts...))
+	evPath, evHandler := mycelv1connect.NewEventServiceHandler(&eventService{s}, opts...)
+	mux.Handle(evPath, streamDeadlinesFor(mycelv1connect.EventServiceWatchEventsProcedure, evHandler))
 	s.uiRoutes(mux)
 	mux.HandleFunc("PUT /api/artifacts", s.handleArtifactPut)
 	mux.HandleFunc("GET /api/artifacts/{id}", s.handleArtifactGet)
@@ -324,12 +337,8 @@ func (s *server) mux() http.Handler {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		_, _ = w.Write([]byte("ok\n"))
 	})
-	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		title := html.EscapeString("Mycelium hub " + string(s.td))
-		_, _ = fmt.Fprintf(w, "<!doctype html><html><head><meta charset=\"utf-8\"><title>%s</title></head><body><h1>%s</h1></body></html>\n", title, title)
-	})
-	return mux
+	s.uiAPIRoutes(mux)
+	return noStore(mux)
 }
 
 func parseCertPEM(b []byte) (*x509.Certificate, error) {

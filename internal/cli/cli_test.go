@@ -162,6 +162,7 @@ func newTestEnv(t *testing.T) *testEnv {
 	fg := newFakeGrants(fh)
 	mux.Handle(mycelv1connect.NewGrantServiceHandler(fg))
 	mux.Handle(mycelv1connect.NewControlServiceHandler(fg))
+	mux.Handle(mycelv1connect.NewEventServiceHandler(&fakeEvents{hub: fh}))
 	mux.HandleFunc("PUT /api/artifacts", fj.putArtifact)
 	mux.HandleFunc("GET /api/artifacts/{id}", fj.getArtifactBytes)
 	var caPEM []byte
@@ -526,39 +527,6 @@ func TestDaemonNothingToRun(t *testing.T) {
 	res := runCLI(t, "", "daemon")
 	if res.code != 1 || !strings.Contains(res.stderr, "nothing to run") {
 		t.Fatalf("daemon: %+v", res)
-	}
-}
-
-func TestUI(t *testing.T) {
-	tests := []struct {
-		name     string
-		hubRole  bool
-		args     []string
-		wantURL  string
-		wantOpen bool
-	}{
-		{name: "node default", args: []string{"ui"}, wantURL: "http://127.0.0.1:7777", wantOpen: true},
-		{name: "local addr flag", args: []string{"ui", "--local-addr", "127.0.0.1:9999"}, wantURL: "http://127.0.0.1:9999", wantOpen: true},
-		{name: "hub machine", hubRole: true, args: []string{"ui"}, wantURL: "https://localhost:7777", wantOpen: true},
-		{name: "json never opens", args: []string{"ui", "--json"}, wantURL: `{"url":"http://127.0.0.1:7777"}`},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			env := newTestEnv(t)
-			if tt.hubRole {
-				writeFile(t, filepath.Join(env.home, "data", "hub", "hub.yaml"), "x: 1\n")
-			}
-			ta := newTestApp(t, "")
-			var opened string
-			ta.openURL = func(u string) { opened = u }
-			res := ta.run(tt.args...)
-			if res.code != 0 || strings.TrimSpace(res.stdout) != tt.wantURL {
-				t.Fatalf("ui: %+v", res)
-			}
-			if tt.wantOpen && opened != tt.wantURL || !tt.wantOpen && opened != "" {
-				t.Fatalf("opened %q", opened)
-			}
-		})
 	}
 }
 

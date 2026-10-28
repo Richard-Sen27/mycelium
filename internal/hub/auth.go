@@ -34,14 +34,19 @@ type nodePeer struct {
 }
 
 // authMiddleware resolves the caller: a verified client certificate (node)
-// and/or an API key (user). It never rejects; handlers decide what they need.
+// and/or an API key (user); without an API key, a node certificate with the
+// read scope header (the node owner, read-only) or a session cookie that
+// passes the CSRF rules (uiauth.go). It never rejects, except read-scoped
+// requests to routes outside the scope; handlers decide what they need.
 func (s *server) authMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
+		var np *nodePeer
 		if r.TLS != nil && len(r.TLS.VerifiedChains) > 0 && len(r.TLS.VerifiedChains[0]) > 0 {
 			leaf := r.TLS.VerifiedChains[0][0]
 			if name, err := identity.NodeNameFromCert(s.td, leaf); err == nil {
-				ctx = context.WithValue(ctx, ctxNode, &nodePeer{Name: name, Cert: leaf})
+				np = &nodePeer{Name: name, Cert: leaf}
+				ctx = context.WithValue(ctx, ctxNode, np)
 			}
 		}
 		if auth := r.Header.Get("Authorization"); auth != "" {
@@ -51,6 +56,24 @@ func (s *server) authMiddleware(next http.Handler) http.Handler {
 					ctx = context.WithValue(ctx, ctxUser, u)
 				} else if !errors.Is(err, errNotFound) {
 					s.log.Error("api key lookup", "err", err)
+				}
+			}
+		}
+		if userFrom(ctx) == nil {
+			switch {
+			case np != nil && r.Header.Get(scopeHeader) == scopeNetworkRead:
+				if u := s.readScopeUser(ctx, np); u != nil {
+					ctx = context.WithValue(context.WithValue(ctx, ctxUser, u), ctxReadScope, np.Name)
+					if !readScopeHTTPAllowed(r) {
+						s.auditDenied(ctx, "node:"+np.Name, "scope.network_read", r.Method+" "+r.URL.Path,
+							map[string]any{"reason": "node read scope"})
+						writeAPIError(w, http.StatusForbidden, "node read scope")
+						return
+					}
+				}
+			case np == nil:
+				if id, u, ok := s.cookieUser(r); ok {
+					ctx = context.WithValue(context.WithValue(ctx, ctxUser, u), ctxSession, id)
 				}
 			}
 		}

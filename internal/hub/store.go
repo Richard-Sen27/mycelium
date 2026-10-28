@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -136,6 +137,10 @@ type store struct {
 
 	touchMu  sync.Mutex
 	keyTouch map[string]time.Time // api key id -> last last_used_at write
+
+	// onChange, when set, hears about every row change the UI's event
+	// stream reports (events.go). It must not block or touch the store.
+	onChange func(change)
 }
 
 func openStore(path string) (*store, error) {
@@ -147,7 +152,7 @@ func openStore(path string) (*store, error) {
 	// One connection serialises all access. The hub's write rate is tiny and
 	// this rules out SQLITE_BUSY on transaction upgrades.
 	db.SetMaxOpenConns(1)
-	if _, err := db.Exec(schema + channelSchema + lifecycleSchema + jobSchema + grantSchema); err != nil {
+	if _, err := db.Exec(schema + channelSchema + lifecycleSchema + jobSchema + grantSchema + uiSchema); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("hub: apply schema: %w", err)
 	}
@@ -160,6 +165,14 @@ func openStore(path string) (*store, error) {
 		return nil, err
 	}
 	if err := migrateNodes(context.Background(), db); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	if err := migrateAudit(context.Background(), db); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	if err := backfillMessageSearch(context.Background(), db); err != nil {
 		_ = db.Close()
 		return nil, err
 	}
@@ -664,6 +677,7 @@ func (s *store) insertNode(ctx context.Context, n *nodeRow) error {
 		return err
 	}
 	s.unrevokeID(n.SPIFFEID)
+	s.changed(kindNode, opCreated, n.Name, nil)
 	return nil
 }
 
@@ -689,6 +703,7 @@ func (s *store) enrolNode(ctx context.Context, tokenID string, n *nodeRow) error
 		return err
 	}
 	s.unrevokeID(n.SPIFFEID)
+	s.changed(kindNode, opCreated, n.Name, nil)
 	return nil
 }
 
@@ -820,6 +835,13 @@ func (s *store) removeNode(ctx context.Context, name string) (*nodeRow, []string
 		s.revAgents[id] = true
 	}
 	s.mu.Unlock()
+	s.changed(kindNode, opDeleted, n.Name, n)
+	for _, id := range agents {
+		s.changed(kindAgent, opUpdated, id, nil)
+	}
+	for _, id := range jobs {
+		s.changed(kindJob, opUpdated, id, nil)
+	}
 	return n, jobs, nil
 }
 
@@ -831,11 +853,12 @@ func (s *store) setNodeCaps(ctx context.Context, name string, caps []string) err
 	if n, _ := res.RowsAffected(); n == 0 {
 		return errNotFound
 	}
+	s.changed(kindNode, opUpdated, name, nil)
 	return nil
 }
 
 func (s *store) renewNodeCert(ctx context.Context, name, serial, notAfter string) error {
-	return s.inTx(ctx, func(tx *sql.Tx) error {
+	return s.changedOn(kindNode, name, s.inTx(ctx, func(tx *sql.Tx) error {
 		var spiffeID string
 		err := tx.QueryRowContext(ctx, `SELECT spiffe_id FROM nodes WHERE name = ?`, name).Scan(&spiffeID)
 		if errors.Is(err, sql.ErrNoRows) {
@@ -849,7 +872,7 @@ func (s *store) renewNodeCert(ctx context.Context, name, serial, notAfter string
 			return err
 		}
 		return recordCertTx(ctx, tx, name, spiffeID, serial, notAfter)
-	})
+	}))
 }
 
 // touchNode records a heartbeat. inv is nil when the inventory is unchanged.
@@ -857,7 +880,7 @@ func (s *store) touchNode(ctx context.Context, name, seen string, inv []byte, in
 	if inv != nil {
 		_, err := s.db.ExecContext(ctx, `UPDATE nodes SET last_seen_at = ?, inventory = ?, inventory_hash = ? WHERE name = ?`,
 			seen, inv, invHash, name)
-		return err
+		return s.changedOn(kindNode, name, err)
 	}
 	_, err := s.db.ExecContext(ctx, `UPDATE nodes SET last_seen_at = ? WHERE name = ?`, seen, name)
 	return err
@@ -989,6 +1012,13 @@ func (s *store) upsertAgent(ctx context.Context, a *agentRow) (bool, *agentRow, 
 		out, err = getAgentQ(ctx, tx, a.ID)
 		return err
 	})
+	if err == nil {
+		op := opUpdated
+		if created {
+			op = opCreated
+		}
+		s.changed(kindAgent, op, a.ID, nil)
+	}
 	return created, out, err
 }
 
@@ -1016,7 +1046,7 @@ func stricterUSD(old, req float64) float64 {
 
 func (s *store) setAgentTokenExpiry(ctx context.Context, id, exp string) error {
 	_, err := s.db.ExecContext(ctx, `UPDATE agents SET token_expires_at = ? WHERE id = ?`, exp, id)
-	return err
+	return s.changedOn(kindAgent, id, err)
 }
 
 func (s *store) listAgents(ctx context.Context) ([]*agentRow, error) {
@@ -1049,6 +1079,7 @@ func (s *store) revokeAgent(ctx context.Context, id string) error {
 	s.mu.Lock()
 	s.revAgents[id] = true
 	s.mu.Unlock()
+	s.changed(kindAgent, opUpdated, id, nil)
 	return nil
 }
 
@@ -1062,6 +1093,7 @@ type auditEntry struct {
 	Resource string
 	Outcome  string
 	Details  string
+	OwnerID  string // the user who owns the actor; "" = admins only (phase 6)
 }
 
 func (s *store) appendAudit(ctx context.Context, actor, action, resource, outcome string, details map[string]any) error {
@@ -1072,9 +1104,18 @@ func (s *store) appendAudit(ctx context.Context, actor, action, resource, outcom
 	if err != nil {
 		return err
 	}
-	_, err = s.db.ExecContext(ctx, `INSERT INTO audit(ts, actor, action, resource, outcome, details) VALUES(?,?,?,?,?,?)`,
-		nowString(), actor, action, resource, outcome, string(b))
-	return err
+	ts := nowString()
+	owner := s.auditOwner(ctx, actor)
+	res, err := s.db.ExecContext(ctx, `INSERT INTO audit(ts, actor, action, resource, outcome, details, owner_id) VALUES(?,?,?,?,?,?,?)`,
+		ts, actor, action, resource, outcome, string(b), nullable(owner))
+	if err != nil {
+		return err
+	}
+	if seq, err := res.LastInsertId(); err == nil {
+		e := auditEntry{Seq: seq, TS: ts, Actor: actor, Action: action, Resource: resource, Outcome: outcome, Details: string(b), OwnerID: owner}
+		s.changed(kindAudit, opCreated, strconv.FormatInt(seq, 10), auditBody{entry: e.proto(), owner: owner})
+	}
+	return nil
 }
 
 func (s *store) listAudit(ctx context.Context) ([]auditEntry, error) {

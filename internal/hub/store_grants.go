@@ -127,6 +127,9 @@ func (s *store) insertGrant(ctx context.Context, g *mycelv1.Grant) error {
 	if isUnique(err) {
 		return errConflict
 	}
+	if err == nil {
+		s.changed(kindGrant, opCreated, g.GetId(), nil)
+	}
 	return err
 }
 
@@ -227,6 +230,7 @@ func (s *store) updateGrant(ctx context.Context, g *mycelv1.Grant, from ...mycel
 	if n, _ := res.RowsAffected(); n == 0 {
 		return errStateChanged
 	}
+	s.changed(kindGrant, opUpdated, g.GetId(), nil)
 	return nil
 }
 
@@ -234,10 +238,12 @@ func (s *store) updateGrant(ctx context.Context, g *mycelv1.Grant, from ...mycel
 // cutoff or beyond the newest keep finished ones, and reports how many.
 func (s *store) pruneGrants(ctx context.Context, cutoff string, keep int) (int, error) {
 	n := 0
+	var gone []*mycelv1.Grant
 	err := s.inTx(ctx, func(tx *sql.Tx) error {
+		gone = gone[:0]
 		const finished = `state NOT IN (?, ?)`
 		open := []any{int32(mycelv1.GrantState_GRANT_STATE_PENDING), int32(mycelv1.GrantState_GRANT_STATE_ACTIVE)}
-		sel := `SELECT id FROM grants WHERE ` + finished + ` AND (created_at < ? OR id NOT IN
+		sel := `SELECT id, owner_id, node FROM grants WHERE ` + finished + ` AND (created_at < ? OR id NOT IN
 			(SELECT id FROM grants WHERE ` + finished + ` ORDER BY created_at DESC, id DESC LIMIT ?))`
 		rows, err := tx.QueryContext(ctx, sel, append(append(open, cutoff), append(open, keep)...)...)
 		if err != nil {
@@ -245,12 +251,13 @@ func (s *store) pruneGrants(ctx context.Context, cutoff string, keep int) (int, 
 		}
 		var ids []string
 		for rows.Next() {
-			var id string
-			if err := rows.Scan(&id); err != nil {
+			g := &mycelv1.Grant{}
+			if err := rows.Scan(&g.Id, &g.OwnerId, &g.Node); err != nil {
 				_ = rows.Close()
 				return err
 			}
-			ids = append(ids, id)
+			ids = append(ids, g.Id)
+			gone = append(gone, g)
 		}
 		if err := rows.Close(); err != nil {
 			return err
@@ -266,6 +273,11 @@ func (s *store) pruneGrants(ctx context.Context, cutoff string, keep int) (int, 
 		n = len(ids)
 		return nil
 	})
+	if err == nil {
+		for _, g := range gone {
+			s.changed(kindGrant, opDeleted, g.GetId(), g)
+		}
+	}
 	return n, err
 }
 
@@ -275,7 +287,7 @@ func (s *store) addGrantUsage(ctx context.Context, grantID, subject, broker stri
 		VALUES(?,?,?,?,?,?,?) ON CONFLICT(grant_id, broker) DO UPDATE SET tokens = tokens + excluded.tokens,
 		requests = requests + excluded.requests, gpu_seconds = gpu_seconds + excluded.gpu_seconds,
 		updated_at = excluded.updated_at`, grantID, subject, broker, tokens, requests, gpuSeconds, nowNano())
-	return err
+	return s.changedOn(kindGrant, grantID, err)
 }
 
 // grantUsageRow is one grant_usage row.
@@ -356,7 +368,7 @@ func (s *store) setNodeSharing(ctx context.Context, node, side string, v *mycelv
 	//nolint:gosec // side is "hub" or "local", checked above; values are bound
 	_, err := s.db.ExecContext(ctx, `INSERT INTO node_sharing(node, `+side+`, updated_at) VALUES(?,?,?)
 		ON CONFLICT(node) DO UPDATE SET `+side+` = excluded.`+side+`, updated_at = excluded.updated_at`, node, b, nowString())
-	return err
+	return s.changedOn(kindNode, node, err)
 }
 
 func (s *store) deleteNodeSharing(ctx context.Context, node string) error {

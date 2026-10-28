@@ -266,6 +266,9 @@ func (s *store) insertJob(ctx context.Context, j *jobRow) error {
 	if isUnique(err) {
 		return errConflict
 	}
+	if err == nil {
+		s.changed(kindJob, opCreated, j.ID, nil)
+	}
 	return err
 }
 
@@ -415,13 +418,22 @@ func (s *store) prunableJobs(ctx context.Context, cutoff string, keep int) ([]st
 
 // deleteJob forgets a finished job (its artifacts stay).
 func (s *store) deleteJob(ctx context.Context, id string) error {
-	return s.inTx(ctx, func(tx *sql.Tx) error {
+	var owner string
+	err := s.inTx(ctx, func(tx *sql.Tx) error {
+		if err := tx.QueryRowContext(ctx, `SELECT owner_id FROM jobs WHERE id = ?`, id).Scan(&owner); err != nil &&
+			!errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
 		if _, err := tx.ExecContext(ctx, `DELETE FROM job_artifacts WHERE job_id = ?`, id); err != nil {
 			return err
 		}
 		_, err := tx.ExecContext(ctx, `DELETE FROM jobs WHERE id = ? AND finished_at IS NOT NULL`, id)
 		return err
 	})
+	if err == nil && owner != "" {
+		s.changed(kindJob, opDeleted, id, &jobRow{ID: id, OwnerID: owner})
+	}
+	return err
 }
 
 // assignedJobs lists STARTING and RUNNING jobs.
@@ -475,6 +487,7 @@ func (s *store) updateJob(ctx context.Context, id string, from []mycelv1.JobStat
 	if n, _ := res.RowsAffected(); n != 1 {
 		return errStateChanged
 	}
+	s.changed(kindJob, opUpdated, id, nil)
 	return nil
 }
 
@@ -496,7 +509,7 @@ func (s *store) finishJob(ctx context.Context, id string, from []mycelv1.JobStat
 		}
 		statsB = b
 	}
-	return s.inTx(ctx, func(tx *sql.Tx) error {
+	return s.changedOn(kindJob, id, s.inTx(ctx, func(tx *sql.Tx) error {
 		ph := make([]string, len(from))
 		args := []any{int32(state), exit, errText, statsB, nowNano(), id}
 		for i, st := range from {
@@ -518,7 +531,7 @@ func (s *store) finishJob(ctx context.Context, id string, from []mycelv1.JobStat
 			}
 		}
 		return nil
-	})
+	}))
 }
 
 func (s *store) jobArtifacts(ctx context.Context, id string) ([]string, error) {

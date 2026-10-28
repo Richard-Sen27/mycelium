@@ -87,9 +87,10 @@
 //
 // Phase 6 additions:
 //
-//	mycel ui [--local-addr]            opens the node UI in the browser: reads <NodeDir>/local.token
-//	                                   and opens http://<local addr>/#local=<token>; prints the URL
-//	                                   with --print instead of opening a browser
+//	mycel ui [--local-addr] [--print]  opens the node UI in the browser: asks the daemon for a
+//	                                   single-use sign-in code (POST /api/local/ui-code with
+//	                                   <NodeDir>/local.token) and opens http://<local addr>/#code=<code>;
+//	                                   --print prints http://<local addr>/#local=<token> instead
 //	mycel hub ui-url                   prints the hub UI address (the hub's external URL)
 //	mycel audit ls [--trace id] [--actor a] [--resource kind:id] [--since t] [--limit n] [--json]
 //	mycel search <query> [--kind node,agent,channel,message,job,grant] [--json]
@@ -319,6 +320,8 @@ func (a *app) rootCmd() *cobra.Command {
 		a.freezeCmd(),
 		a.unfreezeCmd(),
 		a.nodeCmd(),
+		a.auditCmd(),
+		a.searchCmd(),
 	)
 	for _, mk := range extraCommands {
 		root.AddCommand(mk(a))

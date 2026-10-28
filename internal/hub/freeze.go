@@ -53,11 +53,13 @@ func (s *server) changeFreeze(write func() (bool, error), apply func()) (bool, e
 	defer f.op.Unlock()
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	before := s.freezeStatusLocked()
 	changed, err := write()
 	if err != nil || !changed {
 		return changed, err
 	}
 	apply()
+	s.emitFreeze(before)
 	return true, nil
 }
 
