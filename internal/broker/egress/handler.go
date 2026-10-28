@@ -52,7 +52,7 @@ func (p *Proxy) authenticate(r *http.Request) (string, *sandbox, []rule, bool) {
 		return user, nil, nil, false
 	}
 	p.mu.Lock()
-	sb := p.sandboxes[user]
+	sb := p.byUser[user]
 	var token string
 	var rules []rule
 	if sb != nil {

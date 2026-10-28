@@ -1016,3 +1016,35 @@ func mustParse(raw string) *url.URL {
 	}
 	return u
 }
+
+func TestColonIDsAndUnregisterTotals(t *testing.T) {
+	const body = "payload through tunnel"
+	ts := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, body)
+	}))
+	defer ts.Close()
+	p, al := startProxy(t, 0)
+	port := portOf(t, ts.Listener.Addr().String())
+	const id = "sbx:01JTESTULID000000000000000"
+	pu := register(t, p, id, Rule("127.0.0.1:"+strconv.Itoa(port)))
+	if strings.Contains(pu.String(), "sbx") {
+		t.Fatalf("proxy URL exposes the sandbox id: %s", pu.String())
+	}
+	resp, err := clientVia(ts, pu).Get(ts.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	rec := al.wait(t, func(r Record) bool { return r.Method == http.MethodConnect })
+	if rec.SandboxID != id {
+		t.Fatalf("audit record carries %q, want the real id", rec.SandboxID)
+	}
+	in, out := p.Unregister(id)
+	if in <= int64(len(body)) || out <= 0 {
+		t.Fatalf("totals in=%d out=%d", in, out)
+	}
+	if in2, out2 := p.Unregister(id); in2 != 0 || out2 != 0 {
+		t.Fatalf("second Unregister returned %d/%d", in2, out2)
+	}
+}

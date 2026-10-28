@@ -19,6 +19,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -106,19 +107,25 @@ type Proxy struct {
 
 	mu          sync.Mutex
 	closed      bool
-	sandboxes   map[string]*sandbox
-	unknownDeny bucket         // failed authentication with an unknown id
-	wg          sync.WaitGroup // every running handler
+	sandboxes   map[string]*sandbox // by sandbox id
+	byUser      map[string]*sandbox // by credential user name
+	retired     map[string]*sandbox // unregistered, kept until their handlers finish
+	unknownDeny bucket              // failed authentication with an unknown id
+	wg          sync.WaitGroup      // every running handler
 }
 
 // sandbox is one registered sandbox. Fields are guarded by Proxy.mu.
 type sandbox struct {
-	id     string
-	token  string
-	rules  []rule // replaced wholesale, never mutated in place
-	active int
-	conns  map[*liveConn]struct{}
-	deny   bucket
+	id       string
+	user     string // opaque credential user name presented in Proxy-Authorization
+	token    string
+	rules    []rule // replaced wholesale, never mutated in place
+	active   int
+	handlers int // handlers that acquired a slot and have not released it
+	conns    map[*liveConn]struct{}
+	deny     bucket
+	bytesIn  int64 // accumulated from audit records
+	bytesOut int64
 }
 
 // Options configures the proxy.
@@ -158,6 +165,8 @@ func start(ctx context.Context, opts Options, tune tuning) (*Proxy, error) {
 		tune:      tune,
 		serveDone: make(chan struct{}),
 		sandboxes: make(map[string]*sandbox),
+		byUser:    make(map[string]*sandbox),
+		retired:   make(map[string]*sandbox),
 		local:     localAddrs{load: tune.ifaceAddrs, every: tune.ifaceRefresh},
 	}
 	p.ln = &limitListener{
@@ -189,18 +198,21 @@ func start(ctx context.Context, opts Options, tune tuning) (*Proxy, error) {
 func (p *Proxy) Addr() net.Addr { return p.ln.Addr() }
 
 // Register adds a sandbox with its allowlist and returns the proxy URL to put
-// into the sandbox environment (http://<sandbox id>:<token>@host:port).
-// Registering an existing id replaces its rules and token and closes its
-// live connections.
+// into the sandbox environment (http://<user>:<token>@host:port). The user
+// name is an opaque credential chosen by the proxy, so sandbox ids may
+// contain ':' (sbx:<ULID>); audit records carry the real id. Registering an
+// existing id replaces its credential and rules and closes its live
+// connections.
 func (p *Proxy) Register(sandboxID string, allow []Rule) (proxyURL string, err error) {
-	if sandboxID == "" || strings.ContainsAny(sandboxID, ":\r\n") {
+	if sandboxID == "" || strings.ContainsAny(sandboxID, " \t\r\n") {
 		return "", fmt.Errorf("egress: invalid sandbox id %q", sandboxID)
 	}
-	buf := make([]byte, tokenBytes)
+	buf := make([]byte, tokenBytes+8)
 	if _, err := rand.Read(buf); err != nil {
 		return "", fmt.Errorf("egress: token: %w", err)
 	}
-	token := base64.RawURLEncoding.EncodeToString(buf)
+	token := base64.RawURLEncoding.EncodeToString(buf[:tokenBytes])
+	user := "s" + hex.EncodeToString(buf[tokenBytes:])
 	rules := parseRules(allow)
 
 	var live []*liveConn
@@ -210,16 +222,20 @@ func (p *Proxy) Register(sandboxID string, allow []Rule) (proxyURL string, err e
 		return "", errors.New("egress: proxy closed")
 	}
 	if sb, ok := p.sandboxes[sandboxID]; ok {
-		sb.token = token
-		sb.rules = rules
+		delete(p.byUser, sb.user)
+		sb.user, sb.token, sb.rules = user, token, rules
+		p.byUser[user] = sb
 		live = takeConns(sb)
 	} else {
-		p.sandboxes[sandboxID] = &sandbox{
+		sb := &sandbox{
 			id:    sandboxID,
+			user:  user,
 			token: token,
 			rules: rules,
 			conns: make(map[*liveConn]struct{}),
 		}
+		p.sandboxes[sandboxID] = sb
+		p.byUser[user] = sb
 	}
 	p.mu.Unlock()
 	for _, lc := range live {
@@ -230,7 +246,7 @@ func (p *Proxy) Register(sandboxID string, allow []Rule) (proxyURL string, err e
 		"rules", len(allow), "valid_rules", len(rules), "closed_conns", len(live))
 	u := url.URL{
 		Scheme: "http",
-		User:   url.UserPassword(sandboxID, token),
+		User:   url.UserPassword(user, token),
 		Host:   p.ln.Addr().String(),
 	}
 	return u.String(), nil
@@ -265,24 +281,46 @@ func (p *Proxy) Update(sandboxID string, allow []Rule) error {
 	return nil
 }
 
-// Unregister removes a sandbox and closes its connections.
-func (p *Proxy) Unregister(sandboxID string) {
+// Unregister removes a sandbox, closes its connections, waits (up to a few
+// seconds) for their handlers to finish auditing, and returns the bytes the
+// sandbox moved in both directions over its lifetime.
+func (p *Proxy) Unregister(sandboxID string) (bytesIn, bytesOut int64) {
 	p.mu.Lock()
 	sb, ok := p.sandboxes[sandboxID]
 	var live []*liveConn
 	if ok {
 		delete(p.sandboxes, sandboxID)
+		delete(p.byUser, sb.user)
+		p.retired[sandboxID] = sb
 		live = takeConns(sb)
 	}
 	p.mu.Unlock()
 	if !ok {
-		return
+		return 0, 0
 	}
 	for _, lc := range live {
 		lc.close()
 	}
-	p.log.Info("egress sandbox unregistered", "sandbox", sandboxID, "closed_conns", len(live))
+	deadline := time.Now().Add(unregisterWait)
+	for {
+		p.mu.Lock()
+		done := sb.handlers == 0
+		if done || time.Now().After(deadline) {
+			bytesIn, bytesOut = sb.bytesIn, sb.bytesOut
+			delete(p.retired, sandboxID)
+			p.mu.Unlock()
+			break
+		}
+		p.mu.Unlock()
+		time.Sleep(10 * time.Millisecond)
+	}
+	p.log.Info("egress sandbox unregistered", "sandbox", sandboxID, "closed_conns", len(live),
+		"bytes_in", bytesIn, "bytes_out", bytesOut)
+	return bytesIn, bytesOut
 }
+
+// unregisterWait bounds how long Unregister waits for in-flight handlers.
+const unregisterWait = 3 * time.Second
 
 // Close stops the proxy and waits for every handler to return.
 func (p *Proxy) Close() error {
@@ -297,6 +335,7 @@ func (p *Proxy) Close() error {
 		live = append(live, takeConns(sb)...)
 	}
 	p.sandboxes = map[string]*sandbox{}
+	p.byUser = map[string]*sandbox{}
 	p.mu.Unlock()
 
 	err := p.srv.Close()
@@ -399,22 +438,37 @@ func (p *Proxy) acquire(sb *sandbox, host string, port int) (*liveConn, error) {
 	}
 	lc := &liveConn{host: host, port: port}
 	sb.active++
+	sb.handlers++
 	sb.conns[lc] = struct{}{}
 	return lc, nil
 }
 
-// release frees a slot taken by acquire.
+// release frees a slot taken by acquire. Handlers call it (deferred) after
+// their audit record was emitted, so Unregister can wait for sb.handlers.
 func (p *Proxy) release(sb *sandbox, lc *liveConn) {
 	p.mu.Lock()
 	if _, ok := sb.conns[lc]; ok {
 		delete(sb.conns, lc)
 		sb.active--
 	}
+	sb.handlers--
 	p.mu.Unlock()
 	lc.close()
 }
 
 func (p *Proxy) emit(rec Record) {
+	if rec.BytesIn > 0 || rec.BytesOut > 0 {
+		p.mu.Lock()
+		sb := p.sandboxes[rec.SandboxID]
+		if sb == nil {
+			sb = p.retired[rec.SandboxID]
+		}
+		if sb != nil {
+			sb.bytesIn += rec.BytesIn
+			sb.bytesOut += rec.BytesOut
+		}
+		p.mu.Unlock()
+	}
 	p.log.Info("egress",
 		"sandbox", rec.SandboxID, "method", rec.Method, "host", rec.Host, "port", rec.Port,
 		"addr", rec.Addr, "allowed", rec.Allowed, "bytes_in", rec.BytesIn, "bytes_out", rec.BytesOut)
