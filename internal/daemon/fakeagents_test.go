@@ -46,6 +46,8 @@ type fakeAgents struct {
 	registerPaused string
 	usageErr       string // if set, the answer to every agent.usage
 	usageAttempts  int
+
+	jobs *fakeJobs // phase 4 job RPCs
 }
 
 // registered returns the last register request for agent name.
@@ -106,7 +108,7 @@ func newFakeAgents(h *fakeHub) *fakeAgents {
 	if err != nil {
 		h.t.Fatal(err)
 	}
-	f := &fakeAgents{h: h, signer: signer, ttl: identity.AgentTokenLifetime, revoked: map[string]bool{}, changed: make(chan struct{})}
+	f := &fakeAgents{h: h, signer: signer, ttl: identity.AgentTokenLifetime, revoked: map[string]bool{}, changed: make(chan struct{}), jobs: newFakeJobs()}
 	f.subscribe()
 	return f
 }
@@ -234,6 +236,8 @@ func (f *fakeAgents) record(c fakeCall) {
 
 func (f *fakeAgents) serve(node, method string, data []byte) (proto.Message, string) {
 	switch method {
+	case bus.RPCJobStarted, bus.RPCJobLog, bus.RPCJobDone:
+		return f.jobs.serve(method, data)
 	case bus.RPCRegisterAgent:
 		req := &mycelv1.RegisterAgentRequest{}
 		if proto.Unmarshal(data, req) != nil || !identity.ValidNodeName(req.GetAgentName()) || req.GetSandboxId() != "" {

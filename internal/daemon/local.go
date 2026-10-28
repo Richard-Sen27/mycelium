@@ -62,6 +62,11 @@ var agentMethods = func() map[string]agentMethod {
 		{bus.RPCAgentBBGet, func() proto.Message { return &mycelv1.AgentBlackboardGetRequest{} }, func() proto.Message { return &mycelv1.BlackboardGetResponse{} }},
 		{bus.RPCAgentBBPut, func() proto.Message { return &mycelv1.AgentBlackboardPutRequest{} }, func() proto.Message { return &mycelv1.BlackboardPutResponse{} }},
 		{bus.RPCAgentListMessages, func() proto.Message { return &mycelv1.AgentListMessagesRequest{} }, func() proto.Message { return &mycelv1.ListMessagesResponse{} }},
+		{bus.RPCAgentJobRun, func() proto.Message { return &mycelv1.AgentRunJobRequest{} }, func() proto.Message { return &mycelv1.RunJobResponse{} }},
+		{bus.RPCAgentJobGet, func() proto.Message { return &mycelv1.AgentGetJobRequest{} }, func() proto.Message { return &mycelv1.GetJobResponse{} }},
+		{bus.RPCAgentJobCancel, func() proto.Message { return &mycelv1.AgentCancelJobRequest{} }, func() proto.Message { return &mycelv1.CancelJobResponse{} }},
+		{bus.RPCAgentJobLogs, func() proto.Message { return &mycelv1.AgentJobLogsRequest{} }, func() proto.Message { return &mycelv1.AgentJobLogsResponse{} }},
+		{bus.RPCAgentArtifactList, func() proto.Message { return &mycelv1.AgentListArtifactsRequest{} }, func() proto.Message { return &mycelv1.ListArtifactsResponse{} }},
 	}
 	m := make(map[string]agentMethod, len(list))
 	for _, am := range list {
@@ -117,6 +122,9 @@ var pausedAllowed = map[string]bool{
 	bus.RPCAgentListChannels: true,
 	bus.RPCAgentListMessages: true,
 	bus.RPCAgentBBGet:        true,
+	bus.RPCAgentJobGet:       true,
+	bus.RPCAgentJobLogs:      true,
+	bus.RPCAgentArtifactList: true,
 }
 
 func (s *agentSession) setToken(token, expiresAt string) {
@@ -292,6 +300,8 @@ func (l *localAPI) register(mux *http.ServeMux) {
 	lm.HandleFunc("DELETE /api/local/agents/{session}", l.handleDelete)
 	lm.HandleFunc("POST /api/local/agents/{session}/rpc/{method}", l.handleRPC)
 	lm.HandleFunc("POST /api/local/agents/{session}/spawn", l.handleSpawn)
+	lm.HandleFunc("POST /api/local/agents/{session}/artifacts", l.handleExportArtifact)
+	lm.HandleFunc("GET /api/local/agents/{session}/artifacts/{id}", l.handleFetchArtifact)
 	lm.HandleFunc("GET /api/local/workers", l.handleWorkers)
 	lm.HandleFunc("DELETE /api/local/workers/{agent}", l.handleStopWorker)
 	lm.HandleFunc("/api/local/", func(w http.ResponseWriter, _ *http.Request) {
@@ -573,6 +583,11 @@ func (l *localAPI) handleRPC(w http.ResponseWriter, r *http.Request) {
 	}
 
 	timeout := localRPCTimeout
+	if jl, ok := req.(*mycelv1.AgentJobLogsRequest); ok {
+		// A long poll like inbox.pull, without the bus wait and cursor.
+		jl.WaitMs = min(max(jl.GetWaitMs(), 0), int32(inboxMaxWait/time.Millisecond))
+		timeout = time.Duration(jl.GetWaitMs())*time.Millisecond + inboxExtraTimeout
+	}
 	pull, isPull := req.(*mycelv1.InboxPullRequest)
 	var wait time.Duration
 	if isPull {

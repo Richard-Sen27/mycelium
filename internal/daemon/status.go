@@ -24,6 +24,12 @@ type Status struct {
 	Inventory       json.RawMessage `json:"inventory"`
 	LocalAgents     int             `json:"local_agents"`
 	Workers         int             `json:"workers"` // running or paused local workers
+	Jobs            int             `json:"jobs"`    // running jobs
+	// SandboxBackendsAvailable lists the registered sandbox backends that
+	// are available (refreshed every minute).
+	SandboxBackendsAvailable []string `json:"sandbox_backends_available"`
+	// EgressProxy is the egress proxy's address, or "unavailable: <reason>".
+	EgressProxy string `json:"egress_proxy"`
 }
 
 func (n *node) status() Status {
@@ -31,6 +37,10 @@ func (n *node) status() Status {
 	if n.local != nil {
 		agents = n.local.count()
 		workers = n.local.runningWorkers()
+	}
+	jobs, backends, egressProxy := 0, []string{}, ""
+	if n.jobs != nil {
+		jobs, backends, egressProxy = n.jobs.runningCount(), n.jobs.availableBackends(), n.jobs.proxyStatus()
 	}
 	n.mu.Lock()
 	defer n.mu.Unlock()
@@ -44,6 +54,10 @@ func (n *node) status() Status {
 		Inventory:    json.RawMessage("null"),
 		LocalAgents:  agents,
 		Workers:      workers,
+		Jobs:         jobs,
+
+		SandboxBackendsAvailable: backends,
+		EgressProxy:              egressProxy,
 	}
 	if n.expired && n.state != StateRevoked {
 		s.State = StateExpired

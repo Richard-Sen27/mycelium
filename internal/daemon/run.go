@@ -21,6 +21,7 @@ import (
 	"github.com/richard-sen27/mycelium/internal/bus"
 	"github.com/richard-sen27/mycelium/internal/identity"
 	"github.com/richard-sen27/mycelium/internal/inventory"
+	"github.com/richard-sen27/mycelium/internal/sandbox"
 )
 
 // DefaultLocalAddr is where the local UI and status endpoint listen.
@@ -61,6 +62,26 @@ type runConfig struct {
 	onState func(string)
 	// onNode, if set, receives the node once it is loaded (tests).
 	onNode func(*node)
+
+	// Phase 4: jobs.
+	// egressListen is the egress proxy's listen address (default
+	// 127.0.0.1:0; MYCEL_EGRESS_LISTEN overrides it).
+	egressListen string
+	maxJobs      int // concurrent jobs on this node
+	// jobLogFlushEvery is the longest a log batch waits before it is sent.
+	jobLogFlushEvery     time.Duration
+	jobLogMaxBuffer      int           // unacknowledged log bytes kept per job
+	jobLogDrain          time.Duration // how long logs may take to drain after a job
+	jobDoneRetryEvery    time.Duration
+	jobDoneRetryFor      time.Duration
+	jobKillGrace         time.Duration // TERM to KILL in the sandbox
+	jobStatsEvery        time.Duration
+	jobKeep              time.Duration // finished job directories are kept this long
+	jobsCap              int           // at most this many job directories
+	jobJanitorEvery      time.Duration
+	backendsRefreshEvery time.Duration
+	jobArtifactMax       int64 // job input and output artifact size cap
+	localArtifactMax     int64 // trusted-host export and fetch size cap
 }
 
 func defaultRunConfig() runConfig {
@@ -76,7 +97,30 @@ func defaultRunConfig() runConfig {
 		workerKillGrace:  5 * time.Second,
 		workerKeep:       time.Hour,
 		probe:            inventory.Probe,
+
+		egressListen:         egressListenDefault(),
+		maxJobs:              2,
+		jobLogFlushEvery:     500 * time.Millisecond,
+		jobLogMaxBuffer:      4 << 20,
+		jobLogDrain:          30 * time.Second,
+		jobDoneRetryEvery:    10 * time.Second,
+		jobDoneRetryFor:      10 * time.Minute,
+		jobKillGrace:         sandbox.DefaultKillGrace,
+		jobStatsEvery:        sandbox.DefaultStatsInterval,
+		jobKeep:              time.Hour,
+		jobsCap:              50,
+		jobJanitorEvery:      5 * time.Minute,
+		backendsRefreshEvery: 60 * time.Second,
+		jobArtifactMax:       maxJobArtifactBytes,
+		localArtifactMax:     maxLocalArtifactBytes,
 	}
+}
+
+func egressListenDefault() string {
+	if v := os.Getenv(EnvEgressListen); v != "" {
+		return v
+	}
+	return "127.0.0.1:0"
 }
 
 // node is the running node role.
@@ -112,8 +156,9 @@ type node struct {
 
 	kick chan struct{} // asks the heartbeat loop for an immediate beat
 
-	local     *localAPI // local API and agent sessions; set by run
-	localAddr string    // bound local API address; set by run before serving
+	local     *localAPI   // local API and agent sessions; set by run
+	jobs      *jobManager // jobs in sandboxes; set by run
+	localAddr string      // bound local API address; set by run before serving
 
 	revokedOnce  sync.Once
 	revokedCh    chan struct{}
@@ -153,6 +198,7 @@ func run(ctx context.Context, opts Options, ready chan<- Ready, cfg runConfig) e
 		_ = ln.Close()
 		return err
 	}
+	n.jobs = newJobManager(n)
 	if cfg.onNode != nil {
 		cfg.onNode(n)
 	}
@@ -178,6 +224,7 @@ func run(ctx context.Context, opts Options, ready chan<- Ready, cfg runConfig) e
 	wg.Go(func() { n.initialConnect(ictx) })
 	wg.Go(func() { n.heartbeatLoop(ictx) })
 	wg.Go(func() { n.renewLoop(ictx) })
+	wg.Go(func() { n.jobs.loop(ictx) })
 
 	var result error
 	revoked := false
@@ -195,6 +242,8 @@ func run(ctx context.Context, opts Options, ready chan<- Ready, cfg runConfig) e
 	// Workers end with the daemon (and on revocation); their exits are
 	// reported while the bus may still be up.
 	n.local.stopAllWorkers(exitKilled)
+	// Running jobs are cancelled and reported, best effort.
+	n.jobs.shutdown()
 	cancel()
 	// Agent sessions end with the daemon (and on revocation); the cursors
 	// under AgentsDir stay.
@@ -487,6 +536,14 @@ func (n *node) handleCtl(nc *nats.Conn, m *nats.Msg) {
 			after = n.triggerShutdown
 		case *mycelv1.CtlRequest_Agent:
 			if e := n.local.agentCtl(cmd.Agent); e != "" {
+				resp = &mycelv1.CtlResponse{Error: e}
+			}
+		case *mycelv1.CtlRequest_CreateSandbox:
+			if e := n.jobs.create(cmd.CreateSandbox); e != "" {
+				resp = &mycelv1.CtlResponse{Error: e}
+			}
+		case *mycelv1.CtlRequest_KillSandbox:
+			if e := n.jobs.kill(cmd.KillSandbox); e != "" {
 				resp = &mycelv1.CtlResponse{Error: e}
 			}
 		case *mycelv1.CtlRequest_Revoked:

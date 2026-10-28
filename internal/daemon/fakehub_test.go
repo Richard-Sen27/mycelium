@@ -102,6 +102,7 @@ type fakeHub struct {
 	rev        *fakeRevocation
 	storeDir   string
 	http       *httptest.Server
+	arts       *fakeArtifacts
 
 	mu           sync.Mutex
 	bus          *bus.Server
@@ -133,6 +134,7 @@ func newFakeHub(t *testing.T) *fakeHub {
 	h := &fakeHub{
 		t: t, ca: ca, serverCert: sc, rev: &fakeRevocation{}, storeDir: t.TempDir(),
 		tokens: map[string]joinRecord{}, nodeTTL: identity.NodeCertLifetime,
+		arts: newFakeArtifacts(),
 	}
 	h.startBus(0)
 
@@ -140,6 +142,8 @@ func newFakeHub(t *testing.T) *fakeHub {
 	mux.HandleFunc("GET /ca.pem", func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write(ca.CertPEM())
 	})
+	mux.HandleFunc("PUT /api/artifacts", h.arts.put)
+	mux.HandleFunc("GET /api/artifacts/{id}", h.arts.get)
 	path, handler := mycelv1connect.NewEnrolServiceHandler(&fakeEnrol{h: h})
 	mux.Handle(path, handler)
 	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
