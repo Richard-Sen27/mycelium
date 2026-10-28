@@ -1,4 +1,5 @@
 BIN := bin/mycel
+LDFLAGS := -X github.com/richard-sen27/mycelium/internal/version.Version=$(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 PKG := github.com/richard-sen27/mycelium
 
 .PHONY: all build test lint gen gen-check tools e2e clean
@@ -6,7 +7,7 @@ PKG := github.com/richard-sen27/mycelium
 all: build
 
 build:
-	go build -o $(BIN) ./cmd/mycel
+	go build -ldflags "$(LDFLAGS)" -o $(BIN) ./cmd/mycel
 
 test:
 	go test ./...

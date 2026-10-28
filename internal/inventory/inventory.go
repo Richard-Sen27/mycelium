@@ -17,10 +17,7 @@ import (
 // ErrNotImplemented marks a stub.
 var ErrNotImplemented = errors.New("inventory: not implemented")
 
-// Version is stamped into Inventory.mycel_version; set by the build.
-var Version = "dev"
-
-// Probe collects the inventory. It only returns an error when nothing at all
+// Probe collects the inventory and stamps version.Version into mycel_version. It only returns an error when nothing at all
 // could be determined.
 func Probe(ctx context.Context) (*mycelv1.Inventory, error) { panic(ErrNotImplemented) }
 
