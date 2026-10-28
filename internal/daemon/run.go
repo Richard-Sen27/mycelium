@@ -101,6 +101,9 @@ type runConfig struct {
 	// pauseHook, if set, runs before a job sandbox is paused or resumed;
 	// an error counts as a failed pause (tests).
 	pauseHook func(jobID string, pause bool) error
+
+	// Phase 7: hub discovery and redirects (move.go).
+	move moveConfig
 }
 
 func defaultRunConfig() runConfig {
@@ -139,6 +142,7 @@ func defaultRunConfig() runConfig {
 		reportPollEvery:  time.Second,
 		brokerProbeEvery: 30 * time.Second,
 		now:              time.Now,
+		move:             defaultMoveConfig(),
 	}
 }
 
@@ -192,6 +196,8 @@ type node struct {
 	fzMu      sync.Mutex
 	fz        freezeState // network freeze (scope all)
 	localAddr string      // bound local API address; set by run before serving
+
+	mv *moveNode // phase 7: redirects and discovery (move.go)
 
 	revokedOnce  sync.Once
 	revokedCh    chan struct{}
@@ -272,6 +278,7 @@ func run(ctx context.Context, opts Options, ready chan<- Ready, cfg runConfig) e
 	wg.Go(func() { n.grants.b.usageLoop(ictx) })
 	wg.Go(func() { n.grants.b.probeLoop(ictx) })
 	wg.Go(func() { n.grants.sweepDocker(ictx) })
+	wg.Go(func() { n.moveLoop(ictx) })
 
 	var result error
 	revoked := false
@@ -388,6 +395,7 @@ func loadNode(dir string, log *slog.Logger, cfg runConfig) (*node, error) {
 		revokedCh:  make(chan struct{}),
 		shutdownCh: make(chan struct{}),
 		fatalCh:    make(chan error, 1),
+		mv:         newMoveNode(caPEM),
 	}, nil
 }
 
@@ -421,6 +429,7 @@ func (n *node) setStateLocked(s string) {
 	}
 	n.state = s
 	n.connected = s == StateConnected
+	n.mv.trackLocked(n.connected)
 	if n.cfg.onState != nil {
 		n.cfg.onState(s)
 	}
@@ -460,10 +469,21 @@ func (n *node) wake() {
 // connected or ctx is done.
 func (n *node) connectBus(ctx context.Context) (*nats.Conn, uint64, error) {
 	n.mu.Lock()
+	url := n.st.BusURL
+	n.mu.Unlock()
+	return n.connectBusTo(ctx, url, false)
+}
+
+// connectBusTo dials url. A trial connection (a hub the node is switching
+// to) never treats an authorization refusal as revocation before it is
+// installed: a hub that refuses this node's certificate must not wipe its
+// identity.
+func (n *node) connectBusTo(ctx context.Context, url string, trial bool) (*nats.Conn, uint64, error) {
+	n.mu.Lock()
 	n.nextGen++
 	gen := n.nextGen
 	cert := n.cert
-	name, url := n.st.Name, n.st.BusURL
+	name := n.st.Name
 	n.mu.Unlock()
 
 	nc, err := bus.Connect(ctx, bus.ClientConfig{
@@ -491,7 +511,7 @@ func (n *node) connectBus(ctx context.Context) (*nats.Conn, uint64, error) {
 			// A stale connection (replaced after renewal, or torn down)
 			// must never wipe the identity.
 			n.mu.Lock()
-			stale := n.closed || gen < n.ncGen
+			stale := n.closed || gen < n.ncGen || (trial && gen != n.ncGen)
 			n.mu.Unlock()
 			if !stale {
 				n.triggerRevoked()
@@ -622,6 +642,10 @@ func (n *node) handleCtl(nc *nats.Conn, m *nats.Msg) {
 			return
 		case *mycelv1.CtlRequest_Sharing:
 			if e := n.sharing.setHub(cmd.Sharing, true); e != "" {
+				resp = &mycelv1.CtlResponse{Error: e}
+			}
+		case *mycelv1.CtlRequest_Redirect:
+			if e := n.acceptRedirect(cmd.Redirect); e != "" {
 				resp = &mycelv1.CtlResponse{Error: e}
 			}
 		case *mycelv1.CtlRequest_Revoked:

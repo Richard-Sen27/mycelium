@@ -44,6 +44,7 @@ type InitOptions struct {
 	// hub behind a relay; InitResult.LocalHubURL is then the URL for this
 	// machine's CLI).
 	LocalListeners bool
+	NoMDNS         bool // phase 7: write discovery.mdns: false (no mDNS advertising)
 	Logger         *slog.Logger
 }
 

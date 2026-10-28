@@ -69,6 +69,9 @@ func (s *server) handleRPC(msg *nats.Msg) {
 		s.audit(ctx, actor, "rpc."+method, actor, outcomeError, map[string]any{"reason": "invalid reply subject"})
 		return
 	}
+	if s.refuseMovedRPC(msg) {
+		return
+	}
 	if agentMethods[method] {
 		data := msg.Data
 		if !s.ch.goWork(func(release func()) {

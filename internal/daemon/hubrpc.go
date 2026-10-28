@@ -100,6 +100,7 @@ func (n *node) hubRPC(ctx context.Context, method string, req, resp proto.Messag
 		if cr.GetError() == "" {
 			return &hubError{msg: "hub refused the request"}
 		}
+		n.redirectFromReply(reply.Header, cr.GetError())
 		return &hubError{msg: cr.GetError()}
 	default:
 		return errBadReply

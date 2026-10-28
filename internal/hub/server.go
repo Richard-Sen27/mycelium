@@ -79,6 +79,7 @@ type server struct {
 	uiCfg    uiSettings
 	passkeys *passkeyState // nil when no valid RP id can be derived
 	push     *pushState
+	move     *moveState // phase 7: moved mode and mDNS (moving_redirect.go)
 }
 
 func runHub(ctx context.Context, opts Options, ready chan<- Ready) (err error) {
@@ -92,6 +93,12 @@ func runHub(ctx context.Context, opts Options, ready chan<- Ready) (err error) {
 	if err != nil {
 		return fmt.Errorf("hub: read config: %w", err)
 	}
+	unlock, err := lockHubDir(dir)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	cleanStaleExports(dir)
 	read := func(name string) ([]byte, error) { return os.ReadFile(filepath.Join(dir, name)) }
 	caPEM, err := read(caCertFile)
 	if err != nil {
@@ -161,6 +168,7 @@ func runHub(ctx context.Context, opts Options, ready chan<- Ready) (err error) {
 		dir:        dir, allowFake: opts.AllowFakeProfile, jobs: newJobState(newJobConfig),
 		grants: newGrantState(gcfg, rules), freeze: newFreezeState(), syncs: newSyncState(), ui: newUIState(),
 		events: newEventHub(),
+		move:   loadMoveState(dir, cfg, ca, log),
 	}
 	st.onChange = s.events.emit
 	s.tun = &tunnelState{acme: acmeCerts}
@@ -254,6 +262,7 @@ func runHub(ctx context.Context, opts Options, ready chan<- Ready) (err error) {
 		return fmt.Errorf("hub: api listen: %w", err)
 	}
 	s.setupUI(ln.Addr().String())
+	defer s.startMove(ctx)()
 	defer s.push.close()
 	stopEvents := s.startEvents()
 	defer stopEvents()
@@ -322,7 +331,7 @@ func localAddr(addr string) string {
 
 func (s *server) mux() http.Handler {
 	mux := http.NewServeMux()
-	opts := []connect.HandlerOption{connect.WithReadMaxBytes(maxRequestBytes), connect.WithInterceptors(scopeInterceptor{s})}
+	opts := []connect.HandlerOption{connect.WithReadMaxBytes(maxRequestBytes), connect.WithInterceptors(scopeInterceptor{s}, movedInterceptor{s})}
 	mux.Handle(mycelv1connect.NewTokenServiceHandler(&tokenService{s}, opts...))
 	mux.Handle(mycelv1connect.NewNodeServiceHandler(&nodeService{s}, opts...))
 	mux.Handle(mycelv1connect.NewUserServiceHandler(&userService{s}, opts...))
@@ -350,7 +359,8 @@ func (s *server) mux() http.Handler {
 	})
 	s.uiAPIRoutes(mux)
 	s.tunnelRoutes(mux)
-	return noStore(mux)
+	s.moveRoutes(mux)
+	return noStore(s.movedHTTP(mux))
 }
 
 func parseCertPEM(b []byte) (*x509.Certificate, error) {

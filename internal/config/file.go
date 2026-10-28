@@ -20,6 +20,9 @@ type File struct {
 	CACertPEM string `yaml:"ca_cert_pem,omitempty"`
 	// NodeName is set once this machine has joined as a node.
 	NodeName string `yaml:"node_name,omitempty"`
+	// RedirectIssuedAt is the issued_at of the last signed hub redirect the
+	// CLI followed; older ones are refused (phase 7).
+	RedirectIssuedAt int64 `yaml:"redirect_issued_at,omitempty"`
 }
 
 // Load reads the config file. A missing file yields an empty File and no error.

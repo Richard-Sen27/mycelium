@@ -124,6 +124,7 @@ import (
 
 	"github.com/richard-sen27/mycelium/internal/config"
 	"github.com/richard-sen27/mycelium/internal/daemon"
+	"github.com/richard-sen27/mycelium/internal/discovery"
 	"github.com/richard-sen27/mycelium/internal/hub"
 	"github.com/richard-sen27/mycelium/internal/version"
 )
@@ -188,6 +189,12 @@ type app struct {
 	daemonJoin func(context.Context, daemon.JoinOptions) (*daemon.JoinResult, error)
 	daemonRun  func(context.Context, daemon.Options, chan<- daemon.Ready) error
 
+	// Phase 7 (hubmove.go): the mDNS browser and the passphrase prompt
+	// (nil: the real ones), and --follow.
+	browser        discovery.Browser
+	readPassword   func(prompt string) ([]byte, error)
+	followRedirect bool
+
 	jsonOut bool
 	hubURL  string
 	apiKey  string
@@ -248,6 +255,10 @@ func (a *app) execute(args []string) int {
 	if err == nil {
 		return exitOK
 	}
+	var moved hubMovedError
+	if errors.As(err, &moved) {
+		return a.followMoved(moved)
+	}
 	var ec exitCodeError
 	if errors.As(err, &ec) {
 		if ec.err != nil {
@@ -290,6 +301,7 @@ func (a *app) rootCmd() *cobra.Command {
 	pf.StringVar(&a.hubURL, "hub-url", "", "hub URL (overrides config.yaml and "+EnvHubURL+")")
 	pf.StringVar(&a.apiKey, "api-key", "", "API key (overrides config.yaml and "+EnvAPIKey+")")
 	pf.BoolVarP(&a.verbose, "verbose", "v", false, "debug logging to stderr")
+	pf.BoolVar(&a.followRedirect, "follow-redirect", false, "when the hub answers \"moved\", verify its signed redirect and update config.yaml")
 
 	root.AddCommand(
 		a.versionCmd(),

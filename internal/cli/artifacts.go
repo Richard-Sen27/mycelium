@@ -32,6 +32,7 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 
 	mycelv1 "github.com/richard-sen27/mycelium/gen/mycel/v1"
+	"github.com/richard-sen27/mycelium/internal/daemon"
 )
 
 // maxArtifactUpload is the hub's limit for PUT /api/artifacts (1 GiB).
@@ -138,6 +139,11 @@ func windowsDeviceName(name string) bool {
 // artifactHTTPError turns a non-2xx answer of the artifact endpoints into a
 // readable error.
 func artifactHTTPError(hubURL string, res *http.Response) error {
+	if res.StatusCode == http.StatusPreconditionFailed {
+		if r, err := daemon.DecodeRedirect(res.Header.Get(daemon.RedirectHeader)); err == nil {
+			return hubMovedError{r}
+		}
+	}
 	b, _ := io.ReadAll(io.LimitReader(res.Body, 64<<10))
 	var e struct {
 		Error   string `json:"error"`

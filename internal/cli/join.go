@@ -34,7 +34,7 @@ func (a *app) joinCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			opts := daemon.JoinOptions{NodeDir: dirs.NodeDir(), Token: token, Logger: a.log}
+			opts := daemon.JoinOptions{NodeDir: dirs.NodeDir(), Token: token, Logger: a.log, Browser: a.browser}
 			if cmd.Flags().Changed("hub-url") {
 				opts.HubURL = a.hubURL
 			}

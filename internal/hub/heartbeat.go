@@ -198,6 +198,9 @@ func (s *server) handleTelemetry(msg *nats.Msg) {
 		s.log.Debug("bad heartbeat", "node", name, "err", err)
 		return
 	}
+	if s.resendMovedRedirect(name) {
+		return // a moved hub only points its nodes at the new one
+	}
 	var inv []byte
 	var hash string
 	if hb.GetInventory() != nil {

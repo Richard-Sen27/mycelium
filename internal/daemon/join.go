@@ -19,6 +19,7 @@ import (
 
 	mycelv1 "github.com/richard-sen27/mycelium/gen/mycel/v1"
 	"github.com/richard-sen27/mycelium/gen/mycel/v1/mycelv1connect"
+	"github.com/richard-sen27/mycelium/internal/discovery"
 	"github.com/richard-sen27/mycelium/internal/identity"
 )
 
@@ -55,16 +56,13 @@ func join(ctx context.Context, opts JoinOptions) (*JoinResult, error) {
 		return nil, ErrNodeExists
 	}
 
-	caPEM, err := fetchCA(ctx, hubURL)
+	caPEM, hubURL, err := locateHub(ctx, hubURL, tok.CAFingerprint, opts.Browser, log)
 	if err != nil {
 		return nil, err
 	}
 	fp, err := identity.FingerprintPEM(caPEM)
 	if err != nil {
 		return nil, fmt.Errorf("hub CA: %w", err)
-	}
-	if !identity.ConstantTimeEqualHex(fp, tok.CAFingerprint) {
-		return nil, errCAMismatch
 	}
 	pool := x509.NewCertPool()
 	if !pool.AppendCertsFromPEM(caPEM) {
@@ -86,6 +84,18 @@ func join(ctx context.Context, opts JoinOptions) (*JoinResult, error) {
 	defer hc.CloseIdleConnections()
 	client := mycelv1connect.NewEnrolServiceClient(hc, hubURL)
 	resp, err := client.Enrol(ctx, connect.NewRequest(&mycelv1.EnrolRequest{Token: opts.Token, CsrDer: csr}))
+	if r := RedirectFromError(err); r != nil {
+		// The hub moved: follow its signed redirect once, verified against
+		// the CA the token pinned. The new hub is then reached over TLS
+		// verified against the same CA.
+		if verr := VerifyRedirect(caPEM, r, time.Now()); verr != nil {
+			return nil, fmt.Errorf("enrol: the hub moved, but its redirect is not valid: %w", verr)
+		}
+		hubURL = strings.TrimRight(r.GetHubUrl(), "/")
+		log.Info("hub moved; following its signed redirect", "hub", hubURL)
+		client = mycelv1connect.NewEnrolServiceClient(hc, hubURL)
+		resp, err = client.Enrol(ctx, connect.NewRequest(&mycelv1.EnrolRequest{Token: opts.Token, CsrDer: csr}))
+	}
 	if err != nil {
 		return nil, fmt.Errorf("enrol: %w", err)
 	}
@@ -139,6 +149,101 @@ func join(ctx context.Context, opts JoinOptions) (*JoinResult, error) {
 		Caps:         caps,
 		CertNotAfter: leaf.NotAfter.UTC().Format(time.RFC3339),
 	}, nil
+}
+
+// Join fallback timings.
+var (
+	joinDirectTimeout = 3 * time.Second // the token's URL
+	joinBrowseTimeout = 3 * time.Second // mDNS
+)
+
+// locateHub fetches the hub CA from hubURL and checks it against the
+// token's fingerprint. When that fails within joinDirectTimeout, it browses
+// by mDNS for a hub advertising the same fingerprint and fetches the CA
+// from the address found (checked against the fingerprint again; every
+// later connection verifies against that CA).
+func locateHub(ctx context.Context, hubURL, fp string, b discovery.Browser, log *slog.Logger) ([]byte, string, error) {
+	check := func(u string, timeout time.Duration) ([]byte, error) {
+		fctx, cancel := context.WithTimeout(ctx, timeout)
+		defer cancel()
+		caPEM, err := fetchCA(fctx, u)
+		if err != nil {
+			return nil, err
+		}
+		got, err := identity.FingerprintPEM(caPEM)
+		if err != nil {
+			return nil, fmt.Errorf("hub CA: %w", err)
+		}
+		if !identity.ConstantTimeEqualHex(got, fp) {
+			return nil, errCAMismatch
+		}
+		return caPEM, nil
+	}
+	caPEM, directErr := check(hubURL, joinDirectTimeout)
+	if directErr == nil {
+		return caPEM, hubURL, nil
+	}
+	if ctx.Err() != nil || errors.Is(directErr, errCAMismatch) {
+		// A different CA at the token's address is never papered over.
+		return nil, "", directErr
+	}
+	if b == nil {
+		b = discovery.Default()
+	}
+	log.Info("hub not reachable at the token's address; looking for it on the local network (mDNS)", "hub", hubURL, "err", directErr)
+	hubs, err := discovery.Find(ctx, b, fp, joinBrowseTimeout)
+	if err != nil {
+		return nil, "", fmt.Errorf("%w; no hub with the token's CA fingerprint answered by mDNS on this network either (%v)", directErr, err)
+	}
+	// Anyone can advertise the fingerprint: try each answer in turn, and
+	// keep one only when it serves the CA with that fingerprint and its
+	// own certificate verifies against that CA (pinned, never the system
+	// roots).
+	lastErr := errors.New("no usable URL")
+	for _, h := range hubs {
+		found := strings.TrimRight(h.URL, "/")
+		if err := checkHubURL(found); err != nil {
+			continue
+		}
+		caPEM, err := check(found, joinDirectTimeout)
+		if err == nil {
+			err = probePinned(ctx, found, caPEM)
+		}
+		if err != nil {
+			log.Warn("hub found by mDNS ignored", "hub", found, "err", err)
+			lastErr = fmt.Errorf("%s: %w", found, err)
+			continue
+		}
+		log.Info("found the hub on the local network", "hub", found)
+		return caPEM, found, nil
+	}
+	return nil, "", fmt.Errorf("%w; no hub found by mDNS answered with the token's CA (%w)", directErr, lastErr)
+}
+
+// probePinned checks that hubURL answers /healthz over TLS verified
+// against caPEM only.
+func probePinned(ctx context.Context, hubURL string, caPEM []byte) error {
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM(caPEM) {
+		return errors.New("hub CA: no certificate in PEM")
+	}
+	hc := pinnedClient(pool, nil)
+	defer hc.CloseIdleConnections()
+	pctx, cancel := context.WithTimeout(ctx, joinDirectTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(pctx, http.MethodGet, hubURL+"/healthz", nil)
+	if err != nil {
+		return err
+	}
+	resp, err := hc.Do(req)
+	if err != nil {
+		return err
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return errors.New(resp.Status)
+	}
+	return nil
 }
 
 // checkHubURL requires an https URL with a host: the join token and the

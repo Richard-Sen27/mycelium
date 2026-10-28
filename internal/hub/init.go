@@ -234,6 +234,10 @@ func initHub(ctx context.Context, opts InitOptions) (res *InitResult, err error)
 		TrustDomain: string(td), AdvertiseURL: opts.AdvertiseURL, BusAdvertise: busAdvertise,
 		APIListen: apiListen, BusListen: busListen, CreatedAt: nowString(),
 	}
+	if opts.NoMDNS {
+		off := false
+		cfg.Discovery.MDNS = &off
+	}
 	if err = writeConfig(opts.HubDir, cfg); err != nil {
 		return nil, err
 	}

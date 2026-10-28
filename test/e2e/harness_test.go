@@ -445,6 +445,7 @@ func initHubAt(t *testing.T, root string) *Hub {
 		"--bus-listen", "127.0.0.1:"+strconv.Itoa(h.BusPort),
 		"--trust-domain", "e2e",
 		"--node-name", "hub-node",
+		"--no-mdns", // tests never advertise on the network
 		"--json")
 	if code != 0 {
 		t.Fatalf("hub init: exit %d\nstdout: %s\nstderr: %s", code, out, errOut)

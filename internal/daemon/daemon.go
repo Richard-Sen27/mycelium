@@ -20,6 +20,8 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+
+	"github.com/richard-sen27/mycelium/internal/discovery"
 )
 
 // JoinOptions configures `mycel join`.
@@ -30,6 +32,9 @@ type JoinOptions struct {
 	// under a different address from this network). Usually empty.
 	HubURL string
 	Logger *slog.Logger
+	// Browser finds the hub by mDNS when the token's URL does not answer
+	// (phase 7); nil uses discovery.Default().
+	Browser discovery.Browser
 }
 
 // JoinResult is what Join reports.

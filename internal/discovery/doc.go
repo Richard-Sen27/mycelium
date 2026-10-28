@@ -13,27 +13,24 @@
 //
 // Browsing: `mycel join <token>` first tries the hub URL inside the token;
 // when that fails within 3 s it browses for 3 s and uses the hub whose
-// `fp` equals the token's CA fingerprint (an impostor cannot satisfy the
-// fingerprint; the URL it offers is then verified by the normal pinned-CA
-// TLS handshake). `mycel hub discover` lists every hub seen. A node that
+// `fp` equals the token's CA fingerprint, trying each such hub in turn (an
+// impostor can copy the fingerprint but not pass the pinned-CA TLS
+// handshake that follows). `mycel hub discover` lists every hub seen. A node that
 // cannot reach its hub for 60 s also browses, and follows a hub with its
 // pinned CA fingerprint (this is how nodes find a hub laptop whose address
 // changed on the same network).
 //
-// Library: github.com/grandcat/zeroconf or github.com/brutella/dnssd,
-// whichever works on macOS, Linux and Windows without cgo; the choice and
-// the reason go in docs/decisions.md D026. Tests inject a fake browser;
-// an opt-in test (MYCEL_TEST_MDNS=1) exercises real multicast on loopback.
+// Library: github.com/brutella/dnssd (pure Go on macOS, Linux and
+// Windows; see docs/decisions.md D026). Tests inject a fake browser and
+// never touch the network unless MYCEL_TEST_MDNS=1 (browsing everywhere,
+// advertising on Linux only).
 package discovery
 
 import (
 	"context"
-	"errors"
+	"log/slog"
 	"time"
 )
-
-// ErrNotImplemented marks contract stubs.
-var ErrNotImplemented = errors.New("discovery: not implemented")
 
 // ServiceType is the DNS-SD service type.
 const ServiceType = "_mycel-hub._tcp"
@@ -53,8 +50,19 @@ type Advertiser interface {
 	Close() error
 }
 
+// AdvertiseOptions configures Advertise.
+type AdvertiseOptions struct {
+	// PIDFile records the pid of the system responder child (the hub uses
+	// <hub dir>/mdns.pid); a responder named there by a hub that died is
+	// stopped first. Empty: no pid file.
+	PIDFile string
+	Logger  *slog.Logger
+}
+
 // Advertise starts announcing h; it stops when ctx ends or Close is called.
-func Advertise(ctx context.Context, h Hub) (Advertiser, error) { panic(ErrNotImplemented) }
+func Advertise(ctx context.Context, h Hub, opts AdvertiseOptions) (Advertiser, error) {
+	return advertise(ctx, h, opts)
+}
 
 // Browser finds hubs. The default browser uses mDNS; tests inject fakes.
 type Browser interface {
@@ -63,10 +71,11 @@ type Browser interface {
 }
 
 // Default returns the mDNS browser.
-func Default() Browser { panic(ErrNotImplemented) }
+func Default() Browser { return mdnsBrowser{} }
 
-// Find returns the first hub with the given CA fingerprint seen within
-// timeout, or an error.
-func Find(ctx context.Context, b Browser, caFingerprint string, timeout time.Duration) (Hub, error) {
-	panic(ErrNotImplemented)
+// Find returns every hub with the given CA fingerprint seen within timeout
+// (an impostor can copy a fingerprint, so callers probe each in turn over
+// TLS verified against the pinned CA), or ErrNotFound.
+func Find(ctx context.Context, b Browser, caFingerprint string, timeout time.Duration) ([]Hub, error) {
+	return find(ctx, b, caFingerprint, timeout)
 }

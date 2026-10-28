@@ -60,6 +60,9 @@ func newCtlQueues() *ctlQueues {
 // enqueueCtl queues a control request for node and starts its sender if
 // needed. It never blocks.
 func (s *server) enqueueCtl(node string, it ctlItem) {
+	if s.dropMovedCtl(it) {
+		return
+	}
 	cq := s.ctlq
 	cq.mu.Lock()
 	defer cq.mu.Unlock()

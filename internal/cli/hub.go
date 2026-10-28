@@ -13,6 +13,7 @@ func (a *app) hubCmd() *cobra.Command {
 	cmd := groupCmd("hub", "Manage the hub role on this machine")
 	cmd.AddCommand(a.hubInitCmd(), a.hubUIURLCmd())
 	cmd.AddCommand(a.hubTunnelCmd())
+	cmd.AddCommand(a.hubMoveCmds()...)
 	return cmd
 }
 
@@ -96,6 +97,7 @@ func (a *app) hubInitCmd() *cobra.Command {
 	f.StringVar(&opts.AdminName, "admin", "admin", "name of the first admin user")
 	f.StringVar(&opts.LocalNode, "node-name", "", "node name for this machine (default: hostname)")
 	topts.addFlags(f)
+	f.BoolVar(&opts.NoMDNS, "no-mdns", false, "do not advertise the hub on the local network (mDNS)")
 	return cmd
 }
 

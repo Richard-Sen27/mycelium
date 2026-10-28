@@ -1355,6 +1355,9 @@ func (s *server) forgetSync(node string) {
 // was attached once and ended before its expiry (the node may have missed
 // it). Nodes apply all of them idempotently.
 func (s *server) syncNode(node string) {
+	if s.syncMoved(node) {
+		return
+	}
 	// Under the freeze lock, so no freeze change queues between the read
 	// and the enqueue.
 	s.freeze.op.Lock()

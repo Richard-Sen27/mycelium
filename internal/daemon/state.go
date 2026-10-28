@@ -27,6 +27,9 @@ type State struct {
 	BusURL      string   `yaml:"bus_url"`
 	OwnerID     string   `yaml:"owner_id"`
 	Caps        []string `yaml:"caps"`
+	// RedirectIssuedAt is the issued_at of the last signed hub redirect
+	// followed; older ones are refused (phase 7).
+	RedirectIssuedAt int64 `yaml:"redirect_issued_at,omitempty"`
 }
 
 // ErrNoNode is returned by ReadState when NodeDir holds no node.

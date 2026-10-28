@@ -145,6 +145,7 @@ func newFakeHub(t *testing.T) *fakeHub {
 	mux.HandleFunc("GET /ca.pem", func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write(ca.CertPEM())
 	})
+	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok\n")) })
 	mux.HandleFunc("PUT /api/artifacts", h.arts.put)
 	mux.HandleFunc("GET /api/artifacts/{id}", h.arts.get)
 	path, handler := mycelv1connect.NewEnrolServiceHandler(&fakeEnrol{h: h})

@@ -15,6 +15,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/richard-sen27/mycelium/gen/mycel/v1/mycelv1connect"
+	"github.com/richard-sen27/mycelium/internal/daemon"
 	"github.com/richard-sen27/mycelium/internal/identity"
 )
 
@@ -164,6 +165,9 @@ func (b bearer) WrapStreamingHandler(next connect.StreamingHandlerFunc) connect.
 
 // rpcError turns a Connect error into a message a person can act on.
 func rpcError(hubURL string, err error) error {
+	if r := daemon.RedirectFromError(err); r != nil {
+		return hubMovedError{r}
+	}
 	var ce *connect.Error
 	if !errors.As(err, &ce) {
 		return err
