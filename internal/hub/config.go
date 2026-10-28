@@ -10,6 +10,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/richard-sen27/mycelium/internal/policy"
+	"github.com/richard-sen27/mycelium/internal/tunnel"
 )
 
 // File names under the hub dir.
@@ -34,6 +35,19 @@ type Config struct {
 	CreatedAt    string `yaml:"created_at"`
 	// Grants holds the auto-approval rules (phase 5).
 	Grants GrantsConfig `yaml:"grants,omitempty"`
+	// Phase 7 (contracts: internal/tunnel, internal/discovery, moving.go).
+	Tunnel    tunnel.Config     `yaml:"tunnel,omitempty"`
+	ACME      tunnel.ACMEConfig `yaml:"acme,omitempty"`
+	Discovery DiscoveryConfig   `yaml:"discovery,omitempty"`
+	// MovedTo is set by `mycel hub redirect`: the hub only answers with
+	// signed redirects to this URL from then on.
+	MovedTo string `yaml:"moved_to,omitempty"`
+}
+
+// DiscoveryConfig is the discovery section of hub.yaml.
+type DiscoveryConfig struct {
+	// MDNS advertises the hub on the local network; nil means true.
+	MDNS *bool `yaml:"mdns,omitempty"`
 }
 
 // GrantsConfig is the grants section of hub.yaml.

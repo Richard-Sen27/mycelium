@@ -93,6 +93,20 @@
 //	mycel hub ui-url                   prints the hub UI address (the hub's external URL)
 //	mycel audit ls [--trace id] [--actor a] [--resource kind:id] [--since t] [--limit n] [--json]
 //	mycel search <query> [--kind node,agent,channel,message,job,grant] [--json]
+//
+// Phase 7 additions (contracts: internal/tunnel, internal/discovery, internal/service, internal/hub/moving.go):
+//
+//	mycel hub init ... [--tunnel <relay url>] [--acme --acme-email e] [--no-mdns]
+//	mycel hub tunnel set <relay url> | unset | status
+//	mycel hub discover [--timeout 3s] [--json]              lists hubs seen by mDNS
+//	mycel hub export [--out file] [--passphrase-file f]
+//	mycel hub import <file> --advertise <url> [--bus-advertise h:p] [--api-listen a] [--bus-listen a] [--redirect-from <old hub url>]
+//	mycel hub redirect <new url> [--bus h:p]                 on the old hub: sign, queue to nodes, switch to moved mode
+//	mycel relay serve [--listen :7790] [--public 443,7778] [--data-dir d]
+//	mycel relay token create --name <hub> | ls | revoke <name>
+//	mycel service install [--role node|hub] | uninstall | start | stop | status | logs [-f]
+//	mycel join <token> [--hub-url u]                         (now: falls back to mDNS by CA fingerprint; follows a signed redirect)
+//	mycel ... --follow                                       (any command answered with "hub moved": verify and update config.yaml)
 package cli
 
 import (

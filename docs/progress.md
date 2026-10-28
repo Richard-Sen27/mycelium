@@ -102,4 +102,11 @@ Status: contracts written (proto/mycel/v1/ui.proto, internal/web, internal/hub/u
 
 ## Phase 7 — Team rollout
 
-Status: todo
+Status: contracts written (node.proto Redirect, internal/tunnel, internal/discovery, internal/service, internal/hub/moving.go, identity redirect stubs, hub.yaml sections, D026); packages not started
+
+| Package | Owns | State | Notes |
+| --- | --- | --- | --- |
+| P7-relay | `internal/tunnel` (relay server, hub client, ACME), `mycel relay`, hub tunnel wiring | todo | round 1 |
+| P7-move | `internal/discovery`, join discovery, Redirect ctl and following (node, CLI, join), `identity.SignRedirect/VerifyRedirect`, hub export/import/redirect | todo | round 1 |
+| P7-install | `scripts/`, `internal/service`, `.goreleaser.yaml`, release workflow, docs/quickstart.md, scripts/demo.sh | todo | round 1 |
+| P7-e2e | `test/**` (relay tunnel, discovery with a fake browser, export/import/redirect follow, install script dry runs, demo walkthrough) | todo | round 2 |
