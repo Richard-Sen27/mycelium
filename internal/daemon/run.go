@@ -46,9 +46,13 @@ type runConfig struct {
 	renewCheckEvery time.Duration
 	renewRetryEvery time.Duration
 	shutdownGrace   time.Duration
+	// agentRetryEvery is the retry delay after a failed agent token refresh.
+	agentRetryEvery time.Duration
 	probe           func(context.Context) (*mycelv1.Inventory, error)
 	// onState, if set, is called with every state change (tests).
 	onState func(string)
+	// onNode, if set, receives the node once it is loaded (tests).
+	onNode func(*node)
 }
 
 func defaultRunConfig() runConfig {
@@ -59,6 +63,7 @@ func defaultRunConfig() runConfig {
 		renewCheckEvery: time.Hour,
 		renewRetryEvery: 10 * time.Minute,
 		shutdownGrace:   2 * time.Second,
+		agentRetryEvery: 10 * time.Second,
 		probe:           inventory.Probe,
 	}
 }
@@ -96,6 +101,8 @@ type node struct {
 
 	kick chan struct{} // asks the heartbeat loop for an immediate beat
 
+	local *localAPI // local API and agent sessions; set by run
+
 	revokedOnce  sync.Once
 	revokedCh    chan struct{}
 	shutdownOnce sync.Once
@@ -128,6 +135,13 @@ func run(ctx context.Context, opts Options, ready chan<- Ready, cfg runConfig) e
 	if tcp, ok := ln.Addr().(*net.TCPAddr); !ok || !tcp.IP.IsLoopback() {
 		_ = ln.Close()
 		return fmt.Errorf("local listener bound to %s, which is not a loopback address; the local UI is never exposed", ln.Addr())
+	}
+	if n.local, err = newLocalAPI(n); err != nil {
+		_ = ln.Close()
+		return err
+	}
+	if cfg.onNode != nil {
+		cfg.onNode(n)
 	}
 	srv := &http.Server{Handler: n.httpHandler(), ReadHeaderTimeout: 10 * time.Second}
 	srvDone := make(chan struct{})
@@ -166,6 +180,9 @@ func run(ctx context.Context, opts Options, ready chan<- Ready, cfg runConfig) e
 	}
 
 	cancel()
+	// Agent sessions end with the daemon (and on revocation); the cursors
+	// under AgentsDir stay.
+	n.local.close()
 	n.closeConn()
 	wg.Wait()
 	if revoked {

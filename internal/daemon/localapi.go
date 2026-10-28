@@ -24,18 +24,20 @@ package daemon
 //	       Body: the proto request for the method WITHOUT its `call` field.
 //	       The daemon fills AgentCall{token}, sends it on
 //	       bus.NodeRPC(node, method) and returns the reply payload as JSON.
-//	       Allowed methods: the bus.RPCAgent* constants (post, channel.join,
-//	       channel.leave, channel.list, list, whoami, inbox.pull, bb.get,
-//	       bb.put, messages.list). Anything else -> 404.
+//	       Allowed methods: the bus.RPCAgent* constants, given either in full
+//	       ("agent.post") or without the "agent." prefix ("post",
+//	       "channel.join", "channel.leave", "channel.list", "list", "whoami",
+//	       "inbox.pull", "bb.get", "bb.put", "messages.list"). Anything else -> 404.
 //	       For inbox.pull the daemon owns the cursor: it ignores a client
 //	       after_seq of 0, substitutes the stored cursor for that agent
 //	       (persisted in <NodeDir>/agents/<name>.json), and advances it to
 //	       next_seq after a successful reply. A client may pass an explicit
 //	       after_seq to re-read. wait_ms is capped at 60000 and the request
 //	       timeout is wait_ms + 5 s.
-//	       On Mycel-Status "error": 400/403/404/429/500 chosen from the error
-//	       text's leading connect code name when present, body {"error":"..."}.
-//	       401 when the local token is missing or wrong. 503 while the bus is
+//	       On Mycel-Status "error": 400/403/404/409/412/429/500 chosen from the
+//	       error text's leading connect code name when present (an
+//	       "unauthenticated:" hub reply maps to 403, never 401), body
+//	       {"error":"..."}. 401 only when the local token is missing or wrong. 503 while the bus is
 //	       not connected (except inbox.pull with wait, which waits up to
 //	       wait_ms for the connection).
 //

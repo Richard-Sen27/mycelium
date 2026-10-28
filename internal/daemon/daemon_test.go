@@ -203,11 +203,16 @@ func startRun(t *testing.T, dir string) *running {
 
 func startRunWith(t *testing.T, dir string, cfg runConfig, p *fakeProbe, sl *stateLog) *running {
 	t.Helper()
+	return startRunLogged(t, dir, cfg, p, sl, discardLogger())
+}
+
+func startRunLogged(t *testing.T, dir string, cfg runConfig, p *fakeProbe, sl *stateLog, log *slog.Logger) *running {
+	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	ready := make(chan Ready, 1)
 	done := make(chan error, 1)
 	go func() {
-		done <- run(ctx, Options{NodeDir: dir, LocalAddr: "127.0.0.1:0", Logger: discardLogger()}, ready, cfg)
+		done <- run(ctx, Options{NodeDir: dir, LocalAddr: "127.0.0.1:0", Logger: log}, ready, cfg)
 	}()
 	r := &running{done: done, cancel: cancel, states: sl, probe: p}
 	select {

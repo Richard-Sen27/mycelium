@@ -22,9 +22,14 @@ type Status struct {
 	CertNotAfter    string          `json:"cert_not_after"`
 	Caps            []string        `json:"caps"`
 	Inventory       json.RawMessage `json:"inventory"`
+	LocalAgents     int             `json:"local_agents"`
 }
 
 func (n *node) status() Status {
+	agents := 0
+	if n.local != nil {
+		agents = n.local.count()
+	}
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	s := Status{
@@ -35,6 +40,7 @@ func (n *node) status() Status {
 		CertNotAfter: n.leaf.NotAfter.UTC().Format(time.RFC3339),
 		Caps:         append([]string{}, n.st.Caps...),
 		Inventory:    json.RawMessage("null"),
+		LocalAgents:  agents,
 	}
 	if n.expired && n.state != StateRevoked {
 		s.State = StateExpired
@@ -77,6 +83,9 @@ func (n *node) httpHandler() http.Handler {
 			"Inv":  inv,
 		})
 	})
+	if n.local != nil {
+		n.local.register(mux)
+	}
 	return securityHeaders(mux)
 }
 
