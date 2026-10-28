@@ -1,0 +1,9 @@
+.center {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: var(--s-4);
+}
+.card {
+  width: min(400px, 100%);
+}

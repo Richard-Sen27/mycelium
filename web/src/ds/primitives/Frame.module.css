@@ -1,0 +1,154 @@
+.frame {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--bg-1);
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--r-1);
+  animation: assemble var(--t-assemble) var(--ease-out) backwards;
+}
+
+.frame[data-state='active'] {
+  border-color: var(--line-strong);
+}
+.frame[data-state='alert'] {
+  border-color: var(--warn-dim);
+}
+
+/* Corner ticks: four short strokes that sit on the border and mark the
+ * panel as an instrument rather than a card. They draw in on entry. */
+.tick {
+  position: absolute;
+  width: var(--tick);
+  height: var(--tick);
+  border-color: var(--text-3);
+  border-style: solid;
+  border-width: 0;
+  pointer-events: none;
+  animation: tick var(--t-assemble) var(--ease-out) both;
+}
+.frame[data-state='active'] .tick {
+  border-color: var(--accent);
+}
+.frame[data-state='alert'] .tick {
+  border-color: var(--warn);
+}
+.tl {
+  top: -1px;
+  left: -1px;
+  border-top-width: 1px;
+  border-left-width: 1px;
+}
+.tr {
+  top: -1px;
+  right: -1px;
+  border-top-width: 1px;
+  border-right-width: 1px;
+}
+.bl {
+  bottom: -1px;
+  left: -1px;
+  border-bottom-width: 1px;
+  border-left-width: 1px;
+}
+.br {
+  bottom: -1px;
+  right: -1px;
+  border-bottom-width: 1px;
+  border-right-width: 1px;
+}
+
+.header {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-3);
+  min-height: 36px;
+  padding: var(--s-2) var(--s-4);
+  border-bottom: var(--hairline) solid var(--line-faint);
+  position: relative;
+}
+/* The header rule draws from the left when the frame assembles. */
+.header::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 1px;
+  background: var(--line);
+  transform-origin: left;
+  animation: rule var(--t-assemble) var(--ease-out) both;
+}
+
+.index {
+  font-family: var(--font-data);
+  font-size: var(--text-xs);
+  color: var(--text-2);
+  letter-spacing: 0.04em;
+}
+
+.title {
+  font-family: var(--font-data);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-label);
+  color: var(--text-1);
+  margin: 0;
+}
+
+.meta {
+  margin-left: auto;
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-3);
+  font-family: var(--font-data);
+  font-size: var(--text-xs);
+  color: var(--text-2);
+}
+
+.body {
+  padding: var(--s-4);
+  min-width: 0;
+  animation: settle var(--t-assemble) var(--ease-out) both;
+  animation-delay: calc(var(--t-assemble) / 3);
+}
+.flush {
+  padding: 0;
+}
+
+@keyframes assemble {
+  from {
+    clip-path: inset(0 0 calc(100% - 2px) 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+@keyframes rule {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+@keyframes tick {
+  from {
+    width: 0;
+    height: 0;
+  }
+  to {
+    width: var(--tick);
+    height: var(--tick);
+  }
+}
+@keyframes settle {
+  from {
+    transform: translateY(4px);
+  }
+  to {
+    transform: none;
+  }
+}

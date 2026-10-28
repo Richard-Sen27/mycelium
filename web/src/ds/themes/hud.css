@@ -1,0 +1,94 @@
+/*
+ * The "hud" theme: a restrained instrument panel. A theme is only this file:
+ * every primitive and view reads these custom properties and nothing else,
+ * so another skin (a gamified theme later) is a second token file selected
+ * with <html data-theme="...">.
+ *
+ * Contrast (WCAG, against --bg-0 #07090b; against --bg-3 in brackets):
+ * --text-0 16.6 (14.6), --text-1 9.2 (8.1), --text-2 5.7 (5.0), --accent 11.8
+ * (10.4), --warn 9.4 (8.2); --accent-ink on --accent 11.4. --text-3 is for disabled
+ * controls and decorative marks only.
+ */
+:root,
+[data-theme='hud'] {
+  /* Background scale: near black, faint blue-grey lift per level. */
+  --bg-0: #07090b; /* the void behind everything */
+  --bg-1: #0a0d10; /* panels */
+  --bg-2: #0e1216; /* raised: inputs, hovered rows */
+  --bg-3: #141a20; /* pressed, selected */
+  --bg-scrim: rgb(3 4 6 / 0.72);
+
+  /* Hairlines. */
+  --line-faint: #12171c; /* grid, dividers inside a panel */
+  --line: #1c232a; /* panel borders */
+  --line-strong: #2b343e; /* focused inputs, active frames */
+
+  /* Text. */
+  --text-0: #e6ebf0;
+  --text-1: #a7b2bc;
+  --text-2: #7f8b96;
+  --text-3: #4a545e;
+
+  /* One accent, one warning. Each has a dim variant for fills and ticks. */
+  --accent: #8ed1e6;
+  --accent-strong: #addfef; /* hover on accent fills */
+  --accent-dim: #8ed1e633;
+  --accent-ink: #061015; /* text on an accent fill */
+  --warn: #f0a050;
+  --warn-dim: #f0a05033;
+  --warn-ink: #140b02;
+
+  /* State colours map onto the two hues plus neutrals: no rainbow. */
+  --state-ok: var(--accent);
+  --state-busy: var(--text-0);
+  --state-idle: var(--text-2);
+  --state-off: var(--text-3);
+  --state-alert: var(--warn);
+
+  /* Type. */
+  --font-ui: 'Geist Variable', 'Geist', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-data: 'Geist Mono Variable', 'Geist Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  --text-xs: 11px; /* labels, uppercase */
+  --text-sm: 12px;
+  --text-md: 13.5px; /* body */
+  --text-lg: 16px;
+  --text-xl: 22px;
+  --text-2xl: 30px; /* readout values */
+  --leading: 1.5;
+  --tracking-label: 0.1em;
+
+  /* Spacing: a 4 px grid, used generously. */
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-5: 24px;
+  --s-6: 32px;
+  --s-7: 48px;
+  --s-8: 64px;
+
+  /* Radii stay small: instrument, not card. */
+  --r-1: 1px;
+  --r-2: 2px;
+  --r-3: 3px;
+
+  --hairline: 1px;
+  --tick: 6px; /* length of a frame's corner tick */
+
+  /* Motion. Durations collapse to 0 under reduced motion (see base.css). */
+  --t-instant: 80ms;
+  --t-quick: 140ms;
+  --t-move: 260ms;
+  --t-assemble: 420ms;
+  --t-tick: 600ms; /* numeric readouts */
+  --ease-out: cubic-bezier(0.2, 0.7, 0.1, 1);
+  --ease-in-out: cubic-bezier(0.6, 0, 0.3, 1);
+
+  /* Layout. */
+  --topbar-h: 40px;
+  --rail-w: 184px;
+  --inspector-w: 380px;
+  --bottombar-h: 56px;
+
+  --focus-ring: 0 0 0 1px var(--bg-0), 0 0 0 2px var(--accent);
+}

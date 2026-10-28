@@ -185,6 +185,18 @@ Each entry: context, choice, reason. Newest at the bottom. Items in the spec's
   - The visual layer is an own design system (tokens, type, HUD primitives) with the visual direction from the spec; the 3D scene is a separate lazily loaded chunk; the initial load stays under 1 MB without it (checked by a size test). Further unstyled libraries (animation, state, graph layout) are recorded here by the package that adds them.
   - Work packages: P6-api (hub: events, search, audit, passkeys, sessions, push, node read scope, SPA serving; daemon: SPA serving, proxy, `mycel ui`), P6-web-core (toolchain, generated client, design system, shell, routing, sign-in, command bar, PWA shell), then P6-views-a (constellation, lists and search, nodes, agents) and P6-views-b (channels, approvals, sandbox inspector, traces and cost), then P6-e2e (API scope test, size budget, UI smoke test).
 - Reason: the smallest design that gives every node the same app with rights taken from how it was reached, keeps the hub the only place for network-wide changes, and reuses the Connect API instead of adding a parallel one.
+- Libraries (P6-web-core; web/package.json pins exact versions, pnpm lockfile committed):
+  - react, react-dom 19.3.1: the fixed UI base.
+  - vite 7.3.7 (with @vitejs/plugin-react 5.2.0) and typescript 5.9.3 (strict): the fixed build base; Vite emits hashed /assets/ files and no inline script, as the CSP requires.
+  - @connectrpc/connect, @connectrpc/connect-web 2.3.0 and @bufbuild/protobuf 2.16.0 (@bufbuild/protoc-gen-es 2.16.0 for `make gen-web`): typed Connect clients and the WatchEvents server stream from the same protos the Go side uses.
+  - react-router 7.18.5 (data router): lazy route modules keep every view out of the initial load; v7 rather than v8 because v7 is the long-proven line with the data-router API the views packages are written against.
+  - @base-ui/react 1.9.0: headless accessible primitives (Dialog, Select, Tabs). It is the stable release of what was published as @base-ui-components/react; it covers everything this package needs, so no Radix. Its inline `<style>` elements are switched off with `CSPProvider disableStyleElements` (same-origin CSP).
+  - zustand 5.0.16: small client state (session, per-kind entity stores fed by the event stream, palette, inspector, toasts) without a provider tree.
+  - @fontsource-variable/geist and @fontsource-variable/geist-mono 5.3.0: the grotesque and the monospace, self-hosted (latin subset, bundled into /assets, no font CDN).
+  - vite-plugin-pwa 1.3.0 with workbox-precaching, workbox-routing, workbox-core 7.4.1: the manifest and an injectManifest service worker (offline shell, Web Push, notification click opens the approvals route); registered from code, no inline script.
+  - vitest 4.1.12, jsdom 27.4.0, @testing-library/react 16.3.3, @testing-library/user-event 14.6.8, @testing-library/jest-dom 6.9.1, fake-indexeddb 6.2.6 (dev): unit and render tests in Node without a browser.
+  - prettier 3.9.10 (dev): formatting only; no ESLint, to keep the toolchain small.
+  - Not added: motion (CSS transitions and keyframes driven by the duration tokens cover the shell), three.js / react-three-fiber (the constellation package adds them; vite.config.ts already routes them into the lazy `scene` chunk).
 
 ## D026 — Phase 7 design: reachability, moving the hub, install
 
@@ -197,4 +209,3 @@ Each entry: context, choice, reason. Newest at the bottom. Items in the spec's
   - Documentation: docs/quickstart.md is the ten-minute path for a Mac and a Windows machine; scripts/demo.sh runs a hub and a second node on one machine and walks through posting, a job, a grant and the UI.
   - Work packages: P7-relay (tunnel, relay, ACME), P7-move (discovery, redirect, export/import), P7-install (scripts, service, release workflow, quickstart, demo), P7-e2e.
 - Reason: everything a team needs to reach, move and keep a hub without any external account, with the signatures and pins that stop a redirect or a discovery answer from hijacking a network.
-

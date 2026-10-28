@@ -1,0 +1,22 @@
+.chord {
+  display: inline-flex;
+  gap: 2px;
+  vertical-align: middle;
+}
+
+.key {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border: var(--hairline) solid var(--line-strong);
+  border-bottom-width: 2px;
+  border-radius: var(--r-2);
+  font-family: var(--font-data);
+  font-size: var(--text-xs);
+  line-height: 1;
+  color: var(--text-1);
+  background: var(--bg-1);
+}

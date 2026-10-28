@@ -1,0 +1,86 @@
+.page {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: var(--s-5) var(--s-4);
+}
+
+.column {
+  width: min(400px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-5);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+}
+.mark {
+  width: 40px;
+  height: 40px;
+  color: var(--text-1);
+}
+.title {
+  font-size: var(--text-xl);
+  font-weight: 400;
+  letter-spacing: -0.01em;
+}
+.subtitle {
+  font-family: var(--font-data);
+  font-size: var(--text-sm);
+  color: var(--text-2);
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+}
+.form p {
+  color: var(--text-1);
+}
+
+.or {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  font-family: var(--font-data);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-label);
+  color: var(--text-2);
+}
+.or::before,
+.or::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+
+.notice {
+  color: var(--warn);
+  font-size: var(--text-sm);
+}
+
+.footnote {
+  font-size: var(--text-sm);
+  color: var(--text-2);
+}
+.footnote a {
+  color: var(--text-1);
+}
+
+.code {
+  padding: 1px 5px;
+  border: var(--hairline) solid var(--line);
+  background: var(--bg-2);
+  color: var(--text-0);
+  font-size: var(--text-sm);
+}
+.muted {
+  font-size: var(--text-sm);
+  color: var(--text-2) !important;
+}

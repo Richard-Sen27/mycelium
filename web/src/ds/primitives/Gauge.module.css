@@ -1,0 +1,62 @@
+.gauge {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.head {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--s-3);
+  font-family: var(--font-data);
+  font-size: var(--text-xs);
+}
+
+.label {
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-label);
+  color: var(--text-2);
+}
+
+.value {
+  color: var(--text-1);
+  font-variant-numeric: tabular-nums;
+}
+
+.track {
+  position: relative;
+  height: 2px;
+  background: var(--line);
+}
+
+.fill {
+  position: absolute;
+  inset: 0;
+  background: var(--accent);
+  transform-origin: left;
+  transition:
+    transform var(--t-move) var(--ease-out),
+    background-color var(--t-quick) linear;
+}
+
+.gauge[data-alert] .fill {
+  background: var(--warn);
+}
+.gauge[data-alert] .value {
+  color: var(--warn);
+}
+
+.ticks {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  justify-content: space-evenly;
+  pointer-events: none;
+}
+.ticks span {
+  width: 1px;
+  height: 6px;
+  margin-top: 2px;
+  background: var(--line-strong);
+}

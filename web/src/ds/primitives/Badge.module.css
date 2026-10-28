@@ -1,0 +1,69 @@
+.badge {
+  --tone: var(--state-idle);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 20px;
+  padding: 0 7px 0 6px;
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--r-1);
+  font-family: var(--font-data);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--tone);
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.badge[data-tone='ok'] {
+  --tone: var(--state-ok);
+}
+.badge[data-tone='busy'] {
+  --tone: var(--state-busy);
+}
+.badge[data-tone='idle'] {
+  --tone: var(--state-idle);
+}
+.badge[data-tone='off'] {
+  --tone: var(--text-2);
+}
+.badge[data-tone='alert'] {
+  --tone: var(--state-alert);
+  border-color: var(--warn-dim);
+}
+
+/* The marker is a square, not a dot: reads as an indicator lamp. */
+.mark {
+  position: relative;
+  width: 5px;
+  height: 5px;
+  background: var(--tone);
+}
+.badge[data-tone='off'] .mark {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--text-3);
+}
+
+.badge[data-pulse] .mark::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border: 1px solid var(--tone);
+  animation: pulse 1.6s var(--ease-out) infinite;
+}
+
+@keyframes pulse {
+  0% {
+    transform: scale(0.6);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1.8);
+    opacity: 0;
+  }
+}
+
+.text {
+  line-height: 1;
+}

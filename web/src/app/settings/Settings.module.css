@@ -1,0 +1,65 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-5);
+  max-width: 880px;
+}
+
+.heading {
+  font-size: var(--text-xl);
+  font-weight: 400;
+}
+
+.grid {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+}
+
+.readouts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--s-4);
+}
+
+.note {
+  color: var(--text-1);
+  font-size: var(--text-sm);
+  max-width: 60ch;
+}
+.readouts + .note {
+  margin-top: var(--s-4);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-4);
+  flex-wrap: wrap;
+}
+.stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--s-2);
+}
+
+.add {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--s-3);
+  padding: var(--s-4);
+  border-top: var(--hairline) solid var(--line-faint);
+  flex-wrap: wrap;
+}
+.add > :first-child {
+  flex: 1;
+  min-width: 200px;
+}
+
+.fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--s-4);
+}

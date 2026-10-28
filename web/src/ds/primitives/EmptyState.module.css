@@ -1,0 +1,34 @@
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: var(--s-2);
+  padding: var(--s-7) var(--s-5);
+}
+
+.reticle {
+  width: 40px;
+  height: 40px;
+  margin-bottom: var(--s-2);
+  fill: none;
+  stroke: var(--text-3);
+  stroke-width: 1;
+}
+.reticle .dot {
+  fill: var(--accent);
+  stroke: none;
+}
+
+.title {
+  color: var(--text-0);
+  font-weight: 500;
+}
+.body {
+  max-width: 44ch;
+  color: var(--text-2);
+  font-size: var(--text-sm);
+}
+.action {
+  margin-top: var(--s-3);
+}

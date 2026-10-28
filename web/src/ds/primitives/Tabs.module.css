@@ -1,0 +1,68 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.list {
+  position: relative;
+  display: flex;
+  gap: var(--s-5);
+  border-bottom: var(--hairline) solid var(--line);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.tab {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  height: 34px;
+  padding: 0;
+  background: none;
+  border: 0;
+  font-family: var(--font-data);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-label);
+  color: var(--text-2);
+  cursor: pointer;
+  white-space: nowrap;
+  line-height: 34px;
+}
+.tab:hover {
+  color: var(--text-1);
+}
+.tab[data-active] {
+  color: var(--text-0);
+}
+.tab:disabled {
+  color: var(--text-3);
+  cursor: not-allowed;
+}
+
+.count {
+  color: var(--text-2);
+  letter-spacing: 0;
+}
+.tab[data-active] .count {
+  color: var(--accent);
+}
+
+/* The indicator moves between tabs: it marks which panel is live. */
+.indicator {
+  position: absolute;
+  bottom: -1px;
+  left: var(--active-tab-left);
+  width: var(--active-tab-width);
+  height: 1px;
+  background: var(--accent);
+  transition:
+    left var(--t-move) var(--ease-out),
+    width var(--t-move) var(--ease-out);
+}
+
+.panel {
+  padding-top: var(--s-4);
+  outline: none;
+}

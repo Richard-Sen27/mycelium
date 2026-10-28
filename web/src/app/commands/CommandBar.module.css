@@ -1,0 +1,181 @@
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  background: var(--bg-scrim);
+  transition: opacity var(--t-quick) linear;
+}
+.backdrop[data-starting-style],
+.backdrop[data-ending-style] {
+  opacity: 0;
+}
+
+.palette {
+  position: fixed;
+  z-index: 81;
+  top: 14vh;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(640px, calc(100vw - 24px));
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-1);
+  border: var(--hairline) solid var(--line-strong);
+  border-top: 1px solid var(--accent);
+  outline: none;
+  clip-path: inset(0 0 0 0);
+  transition: clip-path var(--t-move) var(--ease-out);
+}
+/* A destructive confirm turns the palette's top rule to the warning hue. */
+.palette:has(.confirm[data-tone='alert']) {
+  border-top-color: var(--warn);
+}
+.palette[data-starting-style],
+.palette[data-ending-style] {
+  clip-path: inset(0 0 calc(100% - 1px) 0);
+}
+
+@media (max-width: 640px) {
+  .palette {
+    top: 8px;
+  }
+}
+
+.inputRow {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  padding: 0 var(--s-4);
+  border-bottom: var(--hairline) solid var(--line);
+}
+.prompt {
+  font-family: var(--font-data);
+  color: var(--accent);
+  font-size: var(--text-lg);
+}
+.input {
+  flex: 1;
+  height: 48px;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  font-size: var(--text-lg);
+  color: var(--text-0);
+}
+.input::placeholder {
+  color: var(--text-2);
+}
+.input:focus-visible {
+  box-shadow: none;
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: var(--s-1) 0;
+  max-height: min(56vh, 420px);
+  overflow-y: auto;
+}
+
+.group {
+  padding: var(--s-3) var(--s-4) var(--s-1);
+  font-family: var(--font-data);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-label);
+  color: var(--text-2);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  min-height: 36px;
+  padding: 0 var(--s-4);
+  color: var(--text-1);
+  cursor: default;
+  border-left: 2px solid transparent;
+}
+.row[aria-selected='true'] {
+  background: var(--bg-3);
+  color: var(--text-0);
+  border-left-color: var(--accent);
+}
+
+.title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.title mark {
+  background: none;
+  color: var(--accent);
+}
+.quote {
+  color: var(--text-0);
+}
+.hint {
+  font-family: var(--font-data);
+  font-size: var(--text-xs);
+  color: var(--text-2);
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kbd {
+  flex: none;
+}
+
+.none {
+  padding: var(--s-5) var(--s-4);
+  color: var(--text-2);
+  font-size: var(--text-sm);
+}
+
+.footer {
+  display: flex;
+  gap: var(--s-4);
+  align-items: center;
+  padding: var(--s-2) var(--s-4);
+  border-top: var(--hairline) solid var(--line-faint);
+  font-size: var(--text-xs);
+  color: var(--text-2);
+}
+.mode {
+  margin-left: auto;
+  font-family: var(--font-data);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-label);
+}
+
+.confirm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  padding: var(--s-5);
+}
+.confirmTitle {
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: 500;
+}
+.confirmBody {
+  color: var(--text-1);
+}
+.confirmActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--s-2);
+  margin-top: var(--s-2);
+}
+
+/* Touch screens have no keyboard shortcuts to show. */
+@media (pointer: coarse) {
+  .kbd,
+  .keys {
+    display: none;
+  }
+}

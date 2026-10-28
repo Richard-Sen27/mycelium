@@ -1,0 +1,104 @@
+.button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-2);
+  border: var(--hairline) solid var(--line-strong);
+  border-radius: var(--r-2);
+  background: transparent;
+  color: var(--text-0);
+  font-family: var(--font-ui);
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    border-color var(--t-quick) linear,
+    background-color var(--t-quick) linear,
+    color var(--t-quick) linear;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.md {
+  height: 32px;
+  padding: 0 var(--s-4);
+  font-size: var(--text-md);
+}
+.sm {
+  height: 24px;
+  padding: 0 var(--s-2);
+  font-size: var(--text-sm);
+}
+
+.button:hover:not(:disabled) {
+  border-color: var(--text-2);
+  background: var(--bg-2);
+}
+.button:active:not(:disabled) {
+  background: var(--bg-3);
+}
+.button:disabled {
+  color: var(--text-3);
+  border-color: var(--line);
+  cursor: not-allowed;
+}
+
+.button[data-variant='primary'] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+.button[data-variant='primary']:hover:not(:disabled) {
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
+}
+.button[data-variant='primary']:disabled {
+  background: var(--accent-dim);
+  border-color: transparent;
+  color: var(--text-2);
+}
+
+.button[data-variant='warn'] {
+  border-color: var(--warn-dim);
+  color: var(--warn);
+}
+.button[data-variant='warn']:hover:not(:disabled) {
+  border-color: var(--warn);
+  background: var(--warn-dim);
+}
+
+.button[data-variant='ghost'] {
+  border-color: transparent;
+  color: var(--text-1);
+}
+.button[data-variant='ghost']:hover:not(:disabled) {
+  color: var(--text-0);
+  border-color: transparent;
+}
+
+/* Busy: a hairline runs along the bottom edge. */
+.button[data-busy]::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  bottom: -1px;
+  height: 1px;
+  width: 30%;
+  background: currentColor;
+  animation: run 0.9s var(--ease-in-out) infinite alternate;
+}
+@keyframes run {
+  from {
+    left: 0;
+  }
+  to {
+    left: 70%;
+  }
+}
+
+.icon {
+  display: inline-flex;
+  width: 14px;
+  height: 14px;
+}
