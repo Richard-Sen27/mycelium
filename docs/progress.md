@@ -42,9 +42,9 @@ Status: done locally (all packages merged, 3 phase-3 acceptance tests green on m
 
 | Package | Owns | Status | Notes |
 | --- | --- | --- | --- |
-| P3-hub | `internal/hub`, `internal/policy` | in progress | agent lifecycle, budgets, usage accounting, pause/resume/stop, AgentService phase 3 methods, paused-agent RPC refusals, EVENTs |
-| P3-daemon-spawn | `internal/daemon` | in progress | spawn endpoint, worker processes, usage parsers, AgentCtl, workers listing |
-| P3-mcp-cli | `internal/adapters/mcp`, `internal/cli`, `harnesses` | in progress | spawn_agent/list_workers/stop_agent tools, `mycel agents` lifecycle commands, spawn sections for claude-code, codex, gemini-cli, fake manifest, `mycel fakeharness` (build tag) |
+| P3-hub | `internal/hub`, `internal/policy` | merged | agent lifecycle, budgets, usage accounting, pause/resume/stop, AgentService phase 3 methods, paused-agent RPC refusals, EVENTs |
+| P3-daemon-spawn | `internal/daemon` | merged | spawn endpoint, worker processes, usage parsers, AgentCtl, workers listing |
+| P3-mcp-cli | `internal/adapters/mcp`, `internal/cli`, `harnesses` | merged | spawn_agent/list_workers/stop_agent tools, `mycel agents` lifecycle commands, spawn sections for claude-code, codex, gemini-cli, fake manifest, `mycel fakeharness` (build tag) |
 | P3-e2e | `test/**` | merged | orchestrator spawns two workers; exhausted budget pauses them; also folds in the phase 2 test review fixes (bus refusal check, race reports from children, explicit ping-pong chain, #alerts reason, goroutine and port hygiene) |
 
 Acceptance (from spec): an orchestrator spawns two local workers that join a channel and report results; an exhausted budget pauses them.
@@ -73,15 +73,15 @@ Open issues: the cross-platform acceptance needs a second machine; CI runners fo
 
 ## Phase 5 — Brokers, grants and approvals
 
-Status: in progress (merged: sharing, MCP/CLI, brokers; hub grants in review fixes; daemon in progress)
+Status: in progress (merged: sharing, MCP/CLI, brokers, hub grants; daemon in review fixes; e2e next)
 
 | Package | Owns | Status | Notes |
 | --- | --- | --- | --- |
-| P5-hub-grants | `internal/hub`, `internal/policy` (grants, approvals, auto rules, sharing, freezes, approvals page, agent/node RPCs) | review fixes | round 1 |
+| P5-hub-grants | `internal/hub`, `internal/policy` (grants, approvals, auto rules, sharing, freezes, approvals page, agent/node RPCs) | merged | round 1 |
 | P5-brokers | `internal/broker/ollama`, `internal/broker/gpu`, `internal/broker/docker` | merged | round 1 |
 | P5-sharing | `internal/sharing` (settings, effective computation, idle detectors per OS) | merged | round 1 |
 | P5-mcp-cli | `internal/adapters/mcp`, `internal/cli` (request_grant, grants/approve/deny/freeze/share commands) | merged | round 1 |
-| P5-daemon | `internal/daemon` (attach/detach, brokers lifecycle, ceiling enforcement, freeze, local controls, sandbox wiring of broker endpoints) | in progress | round 2 |
+| P5-daemon | `internal/daemon` (attach/detach, brokers lifecycle, ceiling enforcement, freeze, local controls, sandbox wiring of broker endpoints) | review fixes | round 2 |
 | P5-e2e | `test/**` | todo | round 3 |
 
 Acceptance (from spec): an agent requests a GPU, an admin approves it in the hub UI and the lease expires on its own; a locally tightened setting rejects a hub grant even while the hub is offline; freezing everything stops all sandboxes within 5 seconds.
@@ -90,7 +90,15 @@ Open issues: no GPU on this Mac; GPU broker tests use a fake NVML/nvidia-smi.
 
 ## Phase 6 — UI
 
-Status: todo
+Status: contracts written (proto/mycel/v1/ui.proto, internal/web, internal/hub/uiapi.go, internal/daemon/localapi.go phase 6, buf.gen.web.yaml, D025); packages not started
+
+| Package | Owns | State | Notes |
+| --- | --- | --- | --- |
+| P6-api | `internal/hub` (events, search, audit, passkeys, push, node read scope, SPA serving), `internal/daemon` (SPA serving, hub proxy), `internal/cli` (ui, audit, search) | todo | round 1 |
+| P6-web-core | `web/` toolchain, generated client, design system, shell, routing, sign-in, command bar, PWA shell | todo | round 1 |
+| P6-views-a | `web/` constellation (r3f chunk), lists and search, nodes, agents | todo | round 2 |
+| P6-views-b | `web/` channels, approvals, sandbox inspector, traces and cost | todo | round 2 |
+| P6-e2e | `test/**`, `web/` size check and smoke test | todo | round 3 |
 
 ## Phase 7 — Team rollout
 

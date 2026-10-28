@@ -84,6 +84,15 @@
 //
 // Global flags: --json, --hub-url, --api-key (override config.yaml), -v.
 // Environment: MYCEL_HOME (see internal/config), MYCEL_API_KEY, MYCEL_HUB_URL.
+//
+// Phase 6 additions:
+//
+//	mycel ui [--local-addr]            opens the node UI in the browser: reads <NodeDir>/local.token
+//	                                   and opens http://<local addr>/#local=<token>; prints the URL
+//	                                   with --print instead of opening a browser
+//	mycel hub ui-url                   prints the hub UI address (the hub's external URL)
+//	mycel audit ls [--trace id] [--actor a] [--resource kind:id] [--since t] [--limit n] [--json]
+//	mycel search <query> [--kind node,agent,channel,message,job,grant] [--json]
 package cli
 
 import (

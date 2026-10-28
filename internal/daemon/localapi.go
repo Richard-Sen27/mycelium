@@ -85,10 +85,39 @@ package daemon
 //	       <NodeDir>/sharing.yaml and enforced by the brokers and the job
 //	       runner even while the hub is unreachable; reported to the hub with
 //	       node.sharing.
-//	GET    /api/local/grants    -> grants currently attached on this node
-//	DELETE /api/local/grants/{id} -> revoke locally (broker detaches at once; the
+//	GET    /api/local/grants    -> {"grants":[Grant…]} (protojson; each Grant as attached on
+//	       this node; an extra top-level "endpoints": {"<grant id>": "<endpoint>"} map
+//	       gives the broker endpoint per grant)
+//	DELETE /api/local/grants/{id} -> 204; revoke locally (broker detaches at once; the
 //	       hub is told with grant.revoked and marks it REVOKED by "node:<name>")
-//	GET    /api/local/freeze    -> {"frozen": bool, "scope": "...", "reason": "..."}
+//	GET    /api/local/freeze    -> {"frozen": bool, "scope": "...", "reason": "...", "since": "..."}
+//	PUT    /api/local/sharing   replies with the bare effective SharingSettings (protojson).
+//	GET    /api/local/agents/{session}/grants -> {"grants":[Grant…],"endpoints":{…},"credentials":{"<grant id>":"<token>"}}
+//	       (the subject's own session only; the only route that reveals a broker
+//	       credential, see docs/security.md: the local token is the same-user boundary)
+//	GET    /api/local/sharing also carries "idle": "unknown" | "<duration>" (the detector's view).
+//
+// Phase 6: the node UI (spec "Every node has the UI", "Local sign-in", "Offline").
+//
+//	GET    /                     the embedded single-page app (internal/web.Handler) on the
+//	       loopback local address; every non-/api path falls back to index.html.
+//	GET    /api/ui-config        (no auth) {"mode":"node","node":"<name>","hub":"<hub url>","version":"..."}
+//	ANY    /api/hub/{path...}    (local token) forwards the request to the hub at /{path}
+//	       over the node's mTLS client certificate with the header
+//	       `Mycel-Scope: network:read`, streaming request and response bodies
+//	       (Connect unary and server-stream calls, including EventService.WatchEvents,
+//	       and GET /api/artifacts/{id}); only the hub's read-only methods are
+//	       forwarded (the same allowlist as internal/hub/uiapi.go, checked here
+//	       too: anything else -> 403); the browser's cookies and Authorization
+//	       header are never forwarded; 502 {"error":"hub unreachable"} when the
+//	       hub cannot be reached, so the UI shows its last known network view
+//	       marked stale.
+//
+//	Sign-in: `mycel ui` reads <NodeDir>/local.token and opens
+//	http://<local addr>/#local=<token>; the app moves the token into
+//	sessionStorage, strips the fragment and sends it as the local bearer. The
+//	token is scoped to network:read (via the proxy) and node:self:restrict (the
+//	phase 2–5 local routes), exactly the rights of the local API.
 //
 // Every local request is logged at debug; agent tokens never appear in logs.
 

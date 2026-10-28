@@ -2,7 +2,7 @@ BIN := bin/mycel
 LDFLAGS := -X github.com/richard-sen27/mycelium/internal/version.Version=$(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 PKG := github.com/richard-sen27/mycelium
 
-.PHONY: all build test lint gen gen-check tools e2e clean
+.PHONY: all build test lint gen gen-check gen-web web web-check tools e2e clean
 
 all: build
 
@@ -29,5 +29,19 @@ gen:
 gen-check: gen
 	git diff --exit-code -- gen/
 
+# UI: web/ is a pnpm project (Node 22). `make web` builds it into
+# internal/web/dist, which the binary embeds; without it the binary serves
+# a "UI not built" page. `make gen-web` regenerates the TypeScript client
+# from proto/ (needs `pnpm install` in web/ first).
+web:
+	cd web && pnpm install --frozen-lockfile && pnpm build
+
+web-check: web
+	cd web && pnpm test && pnpm run size-check
+
+gen-web:
+	buf generate --template buf.gen.web.yaml
+
 clean:
-	rm -rf bin dist
+	rm -rf bin dist web/dist
+	find internal/web/dist -mindepth 1 ! -name .keep -delete

@@ -9,3 +9,5 @@ coverage.*
 *.log
 /.mycel-dev/
 /.claude/
+/internal/web/dist/*
+!/internal/web/dist/.keep

@@ -1,0 +1,125 @@
+syntax = "proto3";
+
+package mycel.v1;
+
+import "mycel/v1/channel.proto";
+import "mycel/v1/envelope.proto";
+import "mycel/v1/grant.proto";
+import "mycel/v1/hub.proto";
+import "mycel/v1/job.proto";
+import "mycel/v1/node.proto";
+
+// ---- Phase 6: the UI's live event stream, search and audit replay ----
+//
+// The UI is a thin client over the same Connect services the CLI uses. This
+// file adds the three things a browser needs beyond them: one stream of
+// every change the caller may see (so views update without polling), a
+// search across every object kind, and audit replay for the traces view.
+//
+// Visibility: every event, hit and audit entry is filtered by the same
+// policy as the corresponding List/Get RPC (a member sees their own nodes,
+// agents, jobs and grants plus channels they belong to; admins see all).
+// A caller never receives an event for an object they could not Get.
+
+enum EventKind {
+  EVENT_KIND_UNSPECIFIED = 0;
+  EVENT_KIND_NODE = 1; // a node row changed (enrolled, online/offline, caps, sharing, removed)
+  EVENT_KIND_AGENT = 2; // an agent row changed (registered, state, budget, usage, exited)
+  EVENT_KIND_CHANNEL = 3; // a channel row changed (created, policy, members, archived, frozen)
+  EVENT_KIND_MESSAGE = 4; // a message was posted (same filter as ChannelService.Watch)
+  EVENT_KIND_JOB = 5; // a job row changed (queued, starting, running, finished, cancelled)
+  EVENT_KIND_GRANT = 6; // a grant row changed (pending, active, denied, revoked, expired, usage)
+  EVENT_KIND_FREEZE = 7; // the network or a channel was frozen or unfrozen
+  EVENT_KIND_AUDIT = 8; // an audit entry was appended (admins only; members get their own actor's entries)
+}
+
+// EventOp says what happened to the object in the event body.
+enum EventOp {
+  EVENT_OP_UNSPECIFIED = 0;
+  EVENT_OP_CREATED = 1;
+  EVENT_OP_UPDATED = 2;
+  EVENT_OP_DELETED = 3; // body carries the id (and the last known row when cheap)
+}
+
+message Event {
+  uint64 seq = 1; // hub-wide monotonic; resume with WatchEventsRequest.after_seq
+  string at = 2; // RFC 3339
+  EventKind kind = 3;
+  EventOp op = 4;
+  string id = 5; // the object's id (node name, agent name, channel name, message/job/grant id)
+  oneof body {
+    Node node = 10;
+    Agent agent = 11;
+    Channel channel = 12;
+    Message message = 13;
+    Job job = 14;
+    Grant grant = 15;
+    FreezeStatusResponse freeze = 16;
+    AuditEntry audit = 17;
+  }
+}
+
+message WatchEventsRequest {
+  uint64 after_seq = 1; // 0 = from now; otherwise replay from the ring buffer (last 10 000 events or 1 h), else FailedPrecondition "too old": the client reloads its lists
+  repeated EventKind kinds = 2; // empty = every kind
+}
+
+// WatchEventsResponse carries one event, or a heartbeat (no event, every
+// 15 s) so browsers and proxies keep the stream open.
+message WatchEventsResponse {
+  Event event = 1;
+}
+
+message SearchRequest {
+  string query = 1; // free text; case-insensitive substring over names, titles and message bodies; at most 200 bytes
+  repeated EventKind kinds = 2; // object kinds to search (MESSAGE searches bodies); empty = all but AUDIT
+  int32 limit = 3; // default 50, max 200
+}
+
+message SearchHit {
+  EventKind kind = 1;
+  string id = 2;
+  string title = 3; // display name: node name, agent name, #channel, job command, grant kind+subject
+  string snippet = 4; // the matching text with the match, at most 200 bytes; messages: the body excerpt
+  string channel = 5; // messages only
+  string at = 6; // RFC 3339 of the object's last change (messages: posted at)
+}
+
+message SearchResponse {
+  repeated SearchHit hits = 1;
+}
+
+// AuditEntry mirrors one record of the AUDIT stream.
+message AuditEntry {
+  string id = 1; // stream sequence as a string
+  string at = 2; // RFC 3339
+  string actor = 3; // user id, "node:<name>", "agent:<name>@<node>", or "hub"
+  string action = 4; // the policy action or event name (e.g. "grant.approve", "post", "node.attach_grant")
+  string resource = 5; // "<kind>:<id>"
+  string outcome = 6; // "allowed", "denied", "error"
+  string trace_id = 7; // the message or job trace when there is one
+  string details_json = 8; // the record's details object, as JSON; never contains secrets
+}
+
+message ListAuditRequest {
+  string trace_id = 1; // filter: entries of one trace (a thread's replay)
+  string actor = 2; // filter
+  string resource = 3; // filter: exact "<kind>:<id>"
+  string since = 4; // RFC 3339, inclusive
+  string until = 5; // RFC 3339, exclusive
+  string page_token = 6; // from a previous response
+  int32 limit = 7; // default 100, max 1000; newest first
+}
+
+message ListAuditResponse {
+  repeated AuditEntry entries = 1;
+  string next_page_token = 2;
+}
+
+// EventService serves the UI. Every method is read-only, so it is also
+// reachable through a node's read scope (see internal/hub/uiapi.go).
+service EventService {
+  rpc WatchEvents(WatchEventsRequest) returns (stream WatchEventsResponse);
+  rpc Search(SearchRequest) returns (SearchResponse);
+  rpc ListAudit(ListAuditRequest) returns (ListAuditResponse);
+}
