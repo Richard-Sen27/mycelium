@@ -414,7 +414,8 @@ func TestLocalUnknownMethodAndSession(t *testing.T) {
 func TestAgentMethodsTable(t *testing.T) {
 	want := []string{bus.RPCAgentPost, bus.RPCAgentJoinChannel, bus.RPCAgentLeaveChannel, bus.RPCAgentListChannels,
 		bus.RPCAgentListAgents, bus.RPCAgentWhoami, bus.RPCAgentInboxPull, bus.RPCAgentBBGet, bus.RPCAgentBBPut, bus.RPCAgentListMessages,
-		bus.RPCAgentJobRun, bus.RPCAgentJobGet, bus.RPCAgentJobCancel, bus.RPCAgentJobLogs, bus.RPCAgentArtifactList}
+		bus.RPCAgentJobRun, bus.RPCAgentJobGet, bus.RPCAgentJobCancel, bus.RPCAgentJobLogs, bus.RPCAgentArtifactList,
+		bus.RPCAgentGrantRequest, bus.RPCAgentGrantList}
 	if len(agentMethods) != len(want) {
 		t.Fatalf("%d methods", len(agentMethods))
 	}

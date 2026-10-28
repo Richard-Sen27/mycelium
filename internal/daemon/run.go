@@ -18,10 +18,12 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	mycelv1 "github.com/richard-sen27/mycelium/gen/mycel/v1"
+	"github.com/richard-sen27/mycelium/internal/broker/gpu"
 	"github.com/richard-sen27/mycelium/internal/bus"
 	"github.com/richard-sen27/mycelium/internal/identity"
 	"github.com/richard-sen27/mycelium/internal/inventory"
 	"github.com/richard-sen27/mycelium/internal/sandbox"
+	"github.com/richard-sen27/mycelium/internal/sharing"
 )
 
 // DefaultLocalAddr is where the local UI and status endpoint listen.
@@ -67,7 +69,6 @@ type runConfig struct {
 	// egressListen is the egress proxy's listen address (default
 	// 127.0.0.1:0; MYCEL_EGRESS_LISTEN overrides it).
 	egressListen string
-	maxJobs      int // concurrent jobs on this node
 	// jobLogFlushEvery is the longest a log batch waits before it is sent.
 	jobLogFlushEvery     time.Duration
 	jobLogMaxBuffer      int           // unacknowledged log bytes kept per job
@@ -82,6 +83,24 @@ type runConfig struct {
 	backendsRefreshEvery time.Duration
 	jobArtifactMax       int64 // job input and output artifact size cap
 	localArtifactMax     int64 // trusted-host export and fetch size cap
+
+	// Phase 5: brokers, grants, sharing.
+	ollamaUpstream   string               // MYCEL_OLLAMA_UPSTREAM or http://127.0.0.1:11434
+	gpuRunner        gpu.Runner           // nil: nvidia-smi
+	dockerEngine     http.RoundTripper    // nil: the host Docker Engine
+	idleDetector     sharing.IdleDetector // nil: the platform detector
+	idleSampleEvery  time.Duration        // idle sampling and local_first evaluation
+	brokerUsageEvery time.Duration        // broker.usage batches
+	reportPollEvery  time.Duration        // retries of grant.revoked and node.sharing, expiry sweep
+	brokerProbeEvery time.Duration        // broker availability refresh
+	// now is the clock of grant expiry (tests move it to simulate sleep).
+	now func() time.Time
+	// grantAttachHook, if set, runs after a broker attached a grant and
+	// before the grant is recorded (tests).
+	grantAttachHook func(id string)
+	// pauseHook, if set, runs before a job sandbox is paused or resumed;
+	// an error counts as a failed pause (tests).
+	pauseHook func(jobID string, pause bool) error
 }
 
 func defaultRunConfig() runConfig {
@@ -99,7 +118,6 @@ func defaultRunConfig() runConfig {
 		probe:            inventory.Probe,
 
 		egressListen:         egressListenDefault(),
-		maxJobs:              2,
 		jobLogFlushEvery:     500 * time.Millisecond,
 		jobLogMaxBuffer:      4 << 20,
 		jobLogDrain:          30 * time.Second,
@@ -113,6 +131,13 @@ func defaultRunConfig() runConfig {
 		backendsRefreshEvery: 60 * time.Second,
 		jobArtifactMax:       maxJobArtifactBytes,
 		localArtifactMax:     maxLocalArtifactBytes,
+
+		ollamaUpstream:   ollamaUpstreamDefault(),
+		idleSampleEvery:  30 * time.Second,
+		brokerUsageEvery: 10 * time.Second,
+		reportPollEvery:  time.Second,
+		brokerProbeEvery: 30 * time.Second,
+		now:              time.Now,
 	}
 }
 
@@ -156,8 +181,15 @@ type node struct {
 
 	kick chan struct{} // asks the heartbeat loop for an immediate beat
 
-	local     *localAPI   // local API and agent sessions; set by run
-	jobs      *jobManager // jobs in sandboxes; set by run
+	local   *localAPI   // local API and agent sessions; set by run
+	jobs    *jobManager // jobs in sandboxes; set by run
+	sharing *sharingState
+	grants  *grantManager
+	grantQ  chan func() // AttachGrant and DetachGrant, in order
+	freezeQ chan func() // Freeze and Unfreeze, in order
+
+	fzMu      sync.Mutex
+	fz        freezeState // network freeze (scope all)
 	localAddr string      // bound local API address; set by run before serving
 
 	revokedOnce  sync.Once
@@ -198,7 +230,14 @@ func run(ctx context.Context, opts Options, ready chan<- Ready, cfg runConfig) e
 		_ = ln.Close()
 		return err
 	}
+	n.loadFrozen()
+	n.sharing = newSharingState(n)
+	n.sharing.sample()
 	n.jobs = newJobManager(n)
+	n.grants = newGrantManager(n)
+	n.grants.b.probeAll(ctx)
+	n.grants.restore()
+	n.applyStartupFreeze()
 	if cfg.onNode != nil {
 		cfg.onNode(n)
 	}
@@ -221,10 +260,17 @@ func run(ctx context.Context, opts Options, ready chan<- Ready, cfg runConfig) e
 	ictx, cancel := context.WithCancel(ctx)
 	var wg sync.WaitGroup
 	wg.Go(func() { n.probeLoop(ictx) })
+	wg.Go(func() { runCtlQueue(ictx, n.grantQ) })
+	wg.Go(func() { runCtlQueue(ictx, n.freezeQ) })
 	wg.Go(func() { n.initialConnect(ictx) })
 	wg.Go(func() { n.heartbeatLoop(ictx) })
 	wg.Go(func() { n.renewLoop(ictx) })
 	wg.Go(func() { n.jobs.loop(ictx) })
+	wg.Go(func() { n.sharing.loop(ictx) })
+	wg.Go(func() { n.grants.loop(ictx) })
+	wg.Go(func() { n.grants.b.usageLoop(ictx) })
+	wg.Go(func() { n.grants.b.probeLoop(ictx) })
+	wg.Go(func() { n.grants.sweepDocker(ictx) })
 
 	var result error
 	revoked := false
@@ -245,6 +291,9 @@ func run(ctx context.Context, opts Options, ready chan<- Ready, cfg runConfig) e
 	// Running jobs are cancelled and reported, best effort.
 	n.jobs.shutdown()
 	cancel()
+	// The last broker usage goes out while the bus may still be up.
+	n.grants.b.finalUsage()
+	n.grants.close()
 	// Agent sessions end with the daemon (and on revocation); the cursors
 	// under AgentsDir stay.
 	n.local.close()
@@ -333,6 +382,8 @@ func loadNode(dir string, log *slog.Logger, cfg runConfig) (*node, error) {
 		leaf:       leaf,
 		state:      StateConnecting,
 		kick:       make(chan struct{}, 1),
+		grantQ:     make(chan func(), ctlQueueSize),
+		freezeQ:    make(chan func(), ctlQueueSize),
 		revokedCh:  make(chan struct{}),
 		shutdownCh: make(chan struct{}),
 		fatalCh:    make(chan error, 1),
@@ -546,6 +597,32 @@ func (n *node) handleCtl(nc *nats.Conn, m *nats.Msg) {
 			if e := n.jobs.kill(cmd.KillSandbox); e != "" {
 				resp = &mycelv1.CtlResponse{Error: e}
 			}
+		// Grant and freeze controls run on their own queues, in order within
+		// each, so a slow grant never delays a freeze (and neither blocks
+		// the other controls).
+		case *mycelv1.CtlRequest_AttachGrant:
+			n.enqueueCtl(n.grantQ, nc, m, func() string { return n.grants.attach(cmd.AttachGrant.GetGrant()) })
+			return
+		case *mycelv1.CtlRequest_DetachGrant:
+			n.enqueueCtl(n.grantQ, nc, m, func() string {
+				reason := cmd.DetachGrant.GetReason()
+				if reason == "" {
+					reason = "detached by hub"
+				}
+				n.grants.detachFromHub(cmd.DetachGrant.GetGrantId(), reason)
+				return ""
+			})
+			return
+		case *mycelv1.CtlRequest_Freeze:
+			n.enqueueCtl(n.freezeQ, nc, m, func() string { return n.freeze(cmd.Freeze) })
+			return
+		case *mycelv1.CtlRequest_Unfreeze:
+			n.enqueueCtl(n.freezeQ, nc, m, func() string { return n.unfreeze(cmd.Unfreeze) })
+			return
+		case *mycelv1.CtlRequest_Sharing:
+			if e := n.sharing.setHub(cmd.Sharing, true); e != "" {
+				resp = &mycelv1.CtlResponse{Error: e}
+			}
 		case *mycelv1.CtlRequest_Revoked:
 			n.log.Warn("hub revoked node", "reason", cmd.Revoked.GetReason())
 			after = n.triggerRevoked
@@ -553,6 +630,11 @@ func (n *node) handleCtl(nc *nats.Conn, m *nats.Msg) {
 			resp = &mycelv1.CtlResponse{Error: "unknown command"}
 		}
 	}
+	n.ctlReply(nc, m, resp)
+	after()
+}
+
+func (n *node) ctlReply(nc *nats.Conn, m *nats.Msg, resp *mycelv1.CtlResponse) {
 	b, err := proto.Marshal(resp)
 	if err == nil && m.Reply != "" {
 		if err := m.Respond(b); err != nil {
@@ -561,7 +643,38 @@ func (n *node) handleCtl(nc *nats.Conn, m *nats.Msg) {
 			_ = nc.FlushTimeout(2 * time.Second)
 		}
 	}
-	after()
+}
+
+// ctlQueueSize bounds the controls waiting on one queue.
+const ctlQueueSize = 256
+
+// enqueueCtl runs work on queue q and replies with its result; a full
+// queue is refused at once.
+func (n *node) enqueueCtl(q chan func(), nc *nats.Conn, m *nats.Msg, work func() string) {
+	job := func() {
+		resp := &mycelv1.CtlResponse{Ok: true}
+		if e := work(); e != "" {
+			resp = &mycelv1.CtlResponse{Error: e}
+		}
+		n.ctlReply(nc, m, resp)
+	}
+	select {
+	case q <- job:
+	default:
+		n.ctlReply(nc, m, &mycelv1.CtlResponse{Error: ctlError("unavailable", "node busy")})
+	}
+}
+
+// runCtlQueue runs the controls of q in order until ctx ends.
+func runCtlQueue(ctx context.Context, q chan func()) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case job := <-q:
+			job()
+		}
+	}
 }
 
 func (n *node) setCaps(caps []string) error {

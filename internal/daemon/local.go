@@ -67,6 +67,8 @@ var agentMethods = func() map[string]agentMethod {
 		{bus.RPCAgentJobCancel, func() proto.Message { return &mycelv1.AgentCancelJobRequest{} }, func() proto.Message { return &mycelv1.CancelJobResponse{} }},
 		{bus.RPCAgentJobLogs, func() proto.Message { return &mycelv1.AgentJobLogsRequest{} }, func() proto.Message { return &mycelv1.AgentJobLogsResponse{} }},
 		{bus.RPCAgentArtifactList, func() proto.Message { return &mycelv1.AgentListArtifactsRequest{} }, func() proto.Message { return &mycelv1.ListArtifactsResponse{} }},
+		{bus.RPCAgentGrantRequest, func() proto.Message { return &mycelv1.AgentRequestGrantRequest{} }, func() proto.Message { return &mycelv1.RequestGrantResponse{} }},
+		{bus.RPCAgentGrantList, func() proto.Message { return &mycelv1.AgentListGrantsRequest{} }, func() proto.Message { return &mycelv1.ListGrantsResponse{} }},
 	}
 	m := make(map[string]agentMethod, len(list))
 	for _, am := range list {
@@ -125,6 +127,7 @@ var pausedAllowed = map[string]bool{
 	bus.RPCAgentJobGet:       true,
 	bus.RPCAgentJobLogs:      true,
 	bus.RPCAgentArtifactList: true,
+	bus.RPCAgentGrantList:    true,
 }
 
 func (s *agentSession) setToken(token, expiresAt string) {
@@ -304,6 +307,13 @@ func (l *localAPI) register(mux *http.ServeMux) {
 	lm.HandleFunc("GET /api/local/agents/{session}/artifacts/{id}", l.handleFetchArtifact)
 	lm.HandleFunc("GET /api/local/workers", l.handleWorkers)
 	lm.HandleFunc("DELETE /api/local/workers/{agent}", l.handleStopWorker)
+	// Phase 5: this machine's controls.
+	lm.HandleFunc("GET /api/local/sharing", l.handleGetSharing)
+	lm.HandleFunc("PUT /api/local/sharing", l.handlePutSharing)
+	lm.HandleFunc("GET /api/local/grants", l.handleListGrants)
+	lm.HandleFunc("DELETE /api/local/grants/{id}", l.handleRevokeGrant)
+	lm.HandleFunc("GET /api/local/agents/{session}/grants", l.handleAgentGrants)
+	lm.HandleFunc("GET /api/local/freeze", l.handleFreeze)
 	lm.HandleFunc("/api/local/", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSONError(w, http.StatusNotFound, "not found")
 	})
@@ -557,6 +567,10 @@ func (l *localAPI) handleRPC(w http.ResponseWriter, r *http.Request) {
 	}
 	if paused, reason := s.pauseState(); paused && !pausedAllowed[am.subject] {
 		writeJSONError(w, http.StatusLocked, "agent paused: "+reason)
+		return
+	}
+	if !pausedAllowed[am.subject] && l.n.isFrozen() {
+		writeJSONError(w, http.StatusLocked, frozenMarker)
 		return
 	}
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxLocalBody))

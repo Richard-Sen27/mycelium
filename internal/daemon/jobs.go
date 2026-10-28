@@ -79,10 +79,23 @@ type runningJob struct {
 	id     string
 	cancel context.CancelCauseFunc
 
-	mu      sync.Mutex
-	slot    bool           // holds a concurrency slot
-	started sync.WaitGroup // job.started retries
+	mu        sync.Mutex
+	slot      bool           // holds a concurrency slot
+	started   sync.WaitGroup // job.started retries
+	sbxID     string         // set once registered with the egress proxy
+	baseRules []egress.Rule  // the profile's egress rules
+	sb        sandbox.Sandbox
+	pauses    map[string]bool // reasons the sandbox must be paused (freeze, local_first)
+
+	// pauseMu orders Pause and Resume calls on the sandbox.
+	pauseMu   sync.Mutex
+	pausedNow bool // the sandbox was last paused; guarded by pauseMu
+	// mainStarted: the job's command was started (guarded by mu).
+	mainStarted bool
 }
+
+// subjectJob is the grant subject of a job.
+func subjectJob(id string) string { return "job:" + id }
 
 // killCause is the cancel cause of KillSandbox (and of a hub that reports
 // the job finished).
@@ -320,6 +333,10 @@ func (m *jobManager) create(cs *mycelv1.CreateSandbox) string {
 		return "" // a retried CreateSandbox: the job is already running
 	case done || m.hasSummary(id):
 		return ctlError("failed_precondition", "job finished")
+	case m.n.isFrozen():
+		return ctlError("failed_precondition", "node frozen")
+	case !m.n.sharing.Offers(offerSandbox) || !m.n.sharing.Active():
+		return ctlError("failed_precondition", "sharing inactive")
 	case !proxyUp:
 		return ctlError("unavailable", "egress proxy is not running on this node")
 	}
@@ -344,7 +361,9 @@ func (m *jobManager) create(cs *mycelv1.CreateSandbox) string {
 	}
 
 	jctx, jcancel := context.WithCancelCause(m.ctx)
-	rj := &runningJob{id: id, cancel: jcancel, slot: true}
+	rj := &runningJob{id: id, cancel: jcancel, slot: true, pauses: map[string]bool{}}
+	maxJobs := m.n.sharing.maxJobs()
+	localFirst := m.n.sharing.localFirstPause()
 	m.mu.Lock()
 	switch {
 	case m.closed:
@@ -355,15 +374,23 @@ func (m *jobManager) create(cs *mycelv1.CreateSandbox) string {
 		m.mu.Unlock()
 		jcancel(nil)
 		return ""
-	case m.running >= m.n.cfg.maxJobs:
+	case m.running >= maxJobs:
 		running := m.running
 		m.mu.Unlock()
 		jcancel(nil)
-		return ctlError("resource_exhausted", "node runs %d jobs (max %d)", running, m.n.cfg.maxJobs)
+		return ctlError("resource_exhausted", "node runs %d jobs (max %d)", running, maxJobs)
 	}
 	m.jobs[id] = rj
 	m.running++
 	m.wg.Add(1)
+	// A freeze that began after the admission check finds the job in
+	// m.jobs or sees the reason set here.
+	if m.n.isFrozen() {
+		rj.pauses[pauseFrozen] = true
+	}
+	if localFirst {
+		rj.pauses[pauseLocalFirst] = true
+	}
 	m.mu.Unlock()
 
 	m.log.Info("job accepted", "job", id, "profile", prof.GetName(), "backend", backend.Name())
@@ -534,22 +561,39 @@ func (m *jobManager) runJob(ctx context.Context, rj *runningJob, cs *mycelv1.Cre
 		out.err = "egress: proxy not running"
 		return
 	}
-	allowText := make([]string, 0, len(rules))
-	for _, r := range rules {
+	// Active grants of the job: environment, egress rules, mounts and the
+	// proxy aliases of the brokers (refreshEgress sets the aliases).
+	sg := m.n.grants.forSubject(subjectJob(rj.id))
+	allRules := appendRules(slices.Clone(rules), sg.rules)
+	allowText := make([]string, 0, len(allRules))
+	for _, r := range allRules {
 		allowText = append(allowText, string(r))
 	}
-	proxyURL, err := proxy.Register(sbxID, rules)
+	proxyURL, err := proxy.Register(sbxID, allRules)
 	if err != nil {
 		proxy = nil
 		out.err = "egress: " + err.Error()
 		return
 	}
+	rj.mu.Lock()
+	rj.sbxID, rj.baseRules = sbxID, rules
+	rj.mu.Unlock()
+	// A grant attached or detached while registering is picked up here.
+	m.refreshEgress(subjectJob(rj.id))
+	env := maps.Clone(spec.GetEnv())
+	if len(sg.env) > 0 {
+		if env == nil {
+			env = map[string]string{}
+		}
+		maps.Copy(env, sg.env)
+	}
 
 	limits, _ := sandbox.ResolveLimits(prof.GetLimits(), nil) // checked on accept
 	sspec := sandbox.Spec{
 		ID: sbxID, JobID: rj.id, Profile: prof, Image: prof.GetImage(), Limits: limits,
-		Env: maps.Clone(spec.GetEnv()), Workspace: seed,
+		Env: env, Workspace: seed,
 		Egress: sandbox.Egress{ProxyURL: proxyURL, Allow: allowText},
+		Mounts: sg.mounts,
 		Dir:    workDir,
 	}
 	var timeout time.Duration
@@ -565,7 +609,7 @@ func (m *jobManager) runJob(ctx context.Context, rj *runningJob, cs *mycelv1.Cre
 	logs := newJobLog(rj.id, m.n.cfg.jobLogFlushEvery, m.n.cfg.jobLogMaxBuffer, m.sendLog,
 		func(msg string, args ...any) { log.Warn(msg, args...) }, hubFinished)
 	runner := &sandbox.Runner{
-		Backend: &startedBackend{Backend: backend, onCreate: func(sb sandbox.Sandbox) {
+		Backend: &startedBackend{Backend: backend, m: m, rj: rj, onCreate: func(sb sandbox.Sandbox) {
 			createdBackend = sb.Backend()
 			m.reportStarted(rj, sb.ID(), sb.Backend(), hubFinished)
 		}},
@@ -594,18 +638,175 @@ func (m *jobManager) runJob(ctx context.Context, rj *runningJob, cs *mycelv1.Cre
 	collected = res.Outputs
 }
 
-// startedBackend reports job.started once the runner created the sandbox.
+// startedBackend reports job.started once the runner created the sandbox
+// and records the sandbox for pausing.
 type startedBackend struct {
 	sandbox.Backend
+	m        *jobManager
+	rj       *runningJob
 	onCreate func(sandbox.Sandbox)
 }
 
 func (b *startedBackend) Create(ctx context.Context, spec sandbox.Spec) (sandbox.Sandbox, error) {
 	sb, err := b.Backend.Create(ctx, spec)
-	if err == nil {
-		b.onCreate(sb)
+	if err != nil {
+		return sb, err
 	}
-	return sb, err
+	b.rj.mu.Lock()
+	b.rj.sb = sb
+	b.rj.mu.Unlock()
+	b.onCreate(sb)
+	return &pausableSandbox{Sandbox: sb, m: b.m, rj: b.rj}, nil
+}
+
+// pausableSandbox applies the job's pause state to the processes it
+// starts, so a command started while the job is paused (freeze,
+// local_first) is stopped at once.
+type pausableSandbox struct {
+	sandbox.Sandbox
+	m  *jobManager
+	rj *runningJob
+}
+
+func (s *pausableSandbox) Exec(ctx context.Context, argv []string, opts sandbox.ExecOpts) (sandbox.Process, error) {
+	p, err := s.Sandbox.Exec(ctx, argv, opts)
+	s.rj.mu.Lock()
+	first := !s.rj.mainStarted
+	s.rj.mainStarted = true
+	s.rj.mu.Unlock()
+	// Only the job's command is paused here; what the runner executes
+	// after it ended (output collection) must run.
+	if err == nil && first {
+		s.m.applyPause(s.rj, true)
+	}
+	return p, err
+}
+
+// ---- pause, egress and grant subjects ----
+
+// setPause sets or clears a pause reason on every running job.
+func (m *jobManager) setPause(reason string, on bool) {
+	m.mu.Lock()
+	list := make([]*runningJob, 0, len(m.jobs))
+	for _, rj := range m.jobs {
+		list = append(list, rj)
+	}
+	m.mu.Unlock()
+	var wg sync.WaitGroup
+	for _, rj := range list {
+		rj.mu.Lock()
+		if on {
+			rj.pauses[reason] = true
+		} else {
+			delete(rj.pauses, reason)
+		}
+		rj.mu.Unlock()
+		wg.Go(func() { m.applyPause(rj, false) })
+	}
+	wg.Wait()
+}
+
+// applyLocalFirst pauses the running jobs while the owner is active and
+// local_first is on, and resumes them otherwise.
+func (m *jobManager) applyLocalFirst() {
+	m.setPause(pauseLocalFirst, m.n.sharing.localFirstPause())
+}
+
+// applyPause brings the sandbox in line with the job's pause reasons. With
+// force a pause is sent even when the sandbox is already paused (a new
+// process was started). A failed pause or resume leaves pausedNow as it
+// was, so the next evaluation (every idleSampleEvery, and every freeze or
+// settings change) tries again.
+func (m *jobManager) applyPause(rj *runningJob, force bool) {
+	rj.pauseMu.Lock()
+	defer rj.pauseMu.Unlock()
+	rj.mu.Lock()
+	want, sb := len(rj.pauses) > 0, rj.sb
+	reasons := slices.Sorted(maps.Keys(rj.pauses))
+	rj.mu.Unlock()
+	if sb == nil || (want == rj.pausedNow && (!force || !want)) {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	var err error
+	if h := m.n.cfg.pauseHook; h != nil {
+		err = h(rj.id, want)
+	}
+	if err == nil {
+		if want {
+			err = sb.Pause(ctx)
+		} else {
+			err = sb.Resume(ctx)
+		}
+	}
+	if err != nil {
+		m.log.Error("pause or resume of a job sandbox failed; retrying", "job", rj.id, "pause", want, "err", err)
+		return
+	}
+	switch {
+	case want && !rj.pausedNow:
+		m.log.Info("job sandbox paused", "job", rj.id, "reasons", reasons)
+	case !want && rj.pausedNow:
+		m.log.Info("job sandbox resumed", "job", rj.id)
+	}
+	rj.pausedNow = want
+}
+
+// jobOfSubject returns the running job of a "job:<id>" subject.
+func (m *jobManager) jobOfSubject(subject string) *runningJob {
+	id, ok := strings.CutPrefix(subject, "job:")
+	if !ok {
+		return nil
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.jobs[id]
+}
+
+// sandboxOf returns the sandbox id of subject's running sandbox, or "".
+func (m *jobManager) sandboxOf(subject string) string {
+	rj := m.jobOfSubject(subject)
+	if rj == nil {
+		return ""
+	}
+	rj.mu.Lock()
+	defer rj.mu.Unlock()
+	return rj.sbxID
+}
+
+// refreshEgress replaces the allowlist of subject's running sandbox with
+// its profile rules plus the rules of its active grants, and its proxy
+// aliases with those of the brokers it may use.
+func (m *jobManager) refreshEgress(subject string) {
+	rj := m.jobOfSubject(subject)
+	if rj == nil {
+		return
+	}
+	proxy := m.currentProxy()
+	rj.mu.Lock()
+	id, base := rj.sbxID, slices.Clone(rj.baseRules)
+	rj.mu.Unlock()
+	if proxy == nil || id == "" {
+		return
+	}
+	extra, aliases := m.n.grants.egressFor(subject)
+	if err := proxy.Update(id, appendRules(base, extra)); err != nil {
+		m.log.Debug("egress update", "job", rj.id, "err", err)
+	}
+	if err := proxy.SetAliases(id, aliases); err != nil {
+		m.log.Warn("egress aliases", "job", rj.id, "err", err)
+	}
+}
+
+// appendRules appends the extra rules not yet in rules.
+func appendRules(rules, extra []egress.Rule) []egress.Rule {
+	for _, r := range extra {
+		if !slices.Contains(rules, r) {
+			rules = append(rules, r)
+		}
+	}
+	return rules
 }
 
 // fetchInputs downloads the workspace tarball and the inputs into inDir.

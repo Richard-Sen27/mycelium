@@ -31,6 +31,13 @@ type Status struct {
 	SandboxBackendsAvailable []string `json:"sandbox_backends_available"`
 	// EgressProxy is the egress proxy's address, or "unavailable: <reason>".
 	EgressProxy string `json:"egress_proxy"`
+	// Phase 5: grants attached on this node, the network freeze, and
+	// whether the effective sharing settings are active right now.
+	Grants        int  `json:"grants"`
+	Frozen        bool `json:"frozen"`
+	SharingActive bool `json:"sharing_active"`
+	// Idle is the owner's idle time or "unknown" (local_first, when=idle).
+	Idle string `json:"idle"`
 }
 
 func (n *node) status() Status {
@@ -43,6 +50,15 @@ func (n *node) status() Status {
 	if n.jobs != nil {
 		jobs, backends, egressProxy = n.jobs.runningCount(), n.jobs.availableBackends(), n.jobs.proxyStatus()
 	}
+	grants, sharingActive, idle := 0, false, "unknown"
+	if n.grants != nil {
+		grants = n.grants.count()
+	}
+	if n.sharing != nil {
+		sharingActive = n.sharing.Active()
+		idle = n.sharing.idleText()
+	}
+	frozen := n.isFrozen()
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	s := Status{
@@ -59,6 +75,10 @@ func (n *node) status() Status {
 
 		SandboxBackendsAvailable: backends,
 		EgressProxy:              egressProxy,
+		Grants:                   grants,
+		Frozen:                   frozen,
+		SharingActive:            sharingActive,
+		Idle:                     idle,
 	}
 	if n.expired && n.state != StateRevoked {
 		s.State = StateExpired

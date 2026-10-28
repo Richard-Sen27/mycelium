@@ -224,6 +224,10 @@ func (l *localAPI) handleSpawn(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusLocked, "agent paused: "+reason)
 		return
 	}
+	if l.n.isFrozen() {
+		writeJSONError(w, http.StatusLocked, frozenMarker)
+		return
+	}
 	var body spawnBody
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxSpawnBody)).Decode(&body); err != nil {
 		writeBodyError(w, err, "invalid JSON body")
@@ -611,7 +615,46 @@ func (l *localAPI) startWorker(w *worker, sess *agentSession, ln *launch) error 
 	case pendPause != "":
 		l.pauseWorker(w, pendPause)
 	}
+	if canPause && l.n.isFrozen() {
+		// The node froze while the worker was starting.
+		_ = w.signal((*procCtl).pause)
+	}
 	return nil
+}
+
+// freezeWorkers stops (on) or continues (off) every worker process for a
+// network freeze. Workers paused by the hub stay stopped on Unfreeze. A
+// freeze makes their sessions refuse write RPCs through the frozen check
+// of the local API, not through the pause flag, so a hub pause and a
+// freeze never undo each other.
+func (l *localAPI) freezeWorkers(on bool) {
+	l.mu.Lock()
+	list := make([]*worker, 0, len(l.workers))
+	for _, w := range l.workers {
+		list = append(list, w)
+	}
+	l.mu.Unlock()
+	for _, w := range list {
+		w.mu.Lock()
+		state, stopping := w.state, w.stopping
+		w.mu.Unlock()
+		if !canPause || stopping {
+			continue
+		}
+		switch {
+		case on && (state == workerRunning || state == workerPaused):
+			if err := w.signal((*procCtl).pause); err != nil {
+				l.log.Warn("freeze worker", "agent", w.agentID, "err", err)
+			}
+		case !on && state == workerRunning:
+			if err := w.signal((*procCtl).resume); err != nil {
+				l.log.Warn("unfreeze worker", "agent", w.agentID, "err", err)
+			}
+		}
+	}
+	if len(list) > 0 {
+		l.log.Info("workers "+map[bool]string{true: "frozen", false: "unfrozen"}[on], "workers", len(list))
+	}
 }
 
 // workerExited records the exit, reports the last usage and the exit to the
@@ -713,7 +756,8 @@ func (l *localAPI) resumeWorker(w *worker) {
 	w.state = workerRunning
 	s := w.sess
 	w.mu.Unlock()
-	if canPause {
+	// A frozen node keeps the process stopped; Unfreeze continues it.
+	if canPause && !l.n.isFrozen() {
 		if err := w.signal((*procCtl).resume); err != nil {
 			l.log.Warn("resume worker", "agent", w.agentID, "err", err)
 		}

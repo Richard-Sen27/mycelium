@@ -261,6 +261,10 @@ func (l *localAPI) handleExportArtifact(w http.ResponseWriter, r *http.Request) 
 		writeJSONError(w, http.StatusLocked, "agent paused: "+reason)
 		return
 	}
+	if l.n.isFrozen() {
+		writeJSONError(w, http.StatusLocked, frozenMarker)
+		return
+	}
 	name := r.URL.Query().Get("name")
 	if name == "" || len(name) > 255 || strings.ContainsRune(name, 0) {
 		writeJSONError(w, http.StatusBadRequest, "name is required (at most 255 bytes)")

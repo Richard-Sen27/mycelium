@@ -191,7 +191,27 @@ func testRunConfig(p *fakeProbe, sl *stateLog) runConfig {
 	cfg.renewRetryEvery = time.Hour
 	cfg.probe = p.probe
 	cfg.onState = sl.add
+	// The owner is away: local_first never pauses jobs unless a test says so.
+	cfg.idleDetector = &fakeIdle{idle: time.Hour}
+	cfg.reportPollEvery = 100 * time.Millisecond
+	cfg.ollamaUpstream = "http://127.0.0.1:1" // nothing listens; tests that need one set it
 	return cfg
+}
+
+// fakeIdle is an injectable idle detector.
+type fakeIdle struct {
+	mu   sync.Mutex
+	idle time.Duration
+	err  error // returned instead when set (sharing.ErrUnknownIdle)
+}
+
+func (f *fakeIdle) IdleFor() (time.Duration, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.err != nil {
+		return 0, f.err
+	}
+	return f.idle, nil
 }
 
 func startRun(t *testing.T, dir string) *running {

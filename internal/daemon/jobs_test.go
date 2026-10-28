@@ -8,12 +8,14 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -56,6 +58,29 @@ func TestJobHelperProcess(t *testing.T) {
 	case "sleep":
 		fmt.Println("sleeping")
 		time.Sleep(time.Hour)
+	case "beat":
+		// args[1]: a host file rewritten with a counter every 100 ms.
+		for i := 0; ; i++ {
+			_ = os.WriteFile(args[1], []byte(strconv.Itoa(i)), 0o600)
+			time.Sleep(100 * time.Millisecond)
+		}
+	case "env":
+		for _, k := range []string{"OPENAI_API_KEY", "OPENAI_BASE_URL", "OLLAMA_HOST"} {
+			fmt.Printf("%s=%s\n", k, os.Getenv(k))
+		}
+		// The broker by name, through the egress proxy like any client.
+		req, _ := http.NewRequest(http.MethodGet, os.Getenv("OLLAMA_HOST")+"/api/tags", nil) //nolint:noctx,gosec // G704: the helper calls the node broker by design
+		req.Header.Set("Authorization", "Bearer "+os.Getenv("OPENAI_API_KEY"))
+		hc := &http.Client{Timeout: 10 * time.Second, Transport: &http.Transport{Proxy: http.ProxyFromEnvironment}}
+		res, err := hc.Do(req) //nolint:gosec // G704: the node's broker through the proxy
+		if err != nil {
+			fmt.Printf("tags-err=%v\n", err)
+			os.Exit(9)
+		}
+		body, _ := io.ReadAll(res.Body)
+		_ = res.Body.Close()
+		fmt.Printf("tags-status=%d\ntags-body=%s\n", res.StatusCode, strings.ReplaceAll(string(body), "\n", " "))
+		os.Exit(0)
 	case "egress":
 		// args[1]: a host outside the allowlist; args[2]: an allowlisted
 		// loopback TLS server.
