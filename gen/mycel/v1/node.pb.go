@@ -1051,6 +1051,9 @@ func (x *AgentCtl) GetReason() string {
 	return ""
 }
 
+// Ping asks for a full heartbeat: the hub does not hold the inventory
+// behind the hash the node's beats carry. The node answers Ok and sends
+// the inventory with its next beat.
 type Ping struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields

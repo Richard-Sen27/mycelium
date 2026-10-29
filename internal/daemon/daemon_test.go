@@ -385,10 +385,11 @@ func TestRunConnectHeartbeatAndCtl(t *testing.T) {
 		t.Fatalf("inventory not in proto names: %s", s.Inventory)
 	}
 
-	// Ping.
+	// Ping: answered, and the next beat carries the inventory again.
 	if resp := ctl(t, hc, "n1", &mycelv1.CtlRequest{Cmd: &mycelv1.CtlRequest_Ping{Ping: &mycelv1.Ping{}}}); !resp.GetOk() {
 		t.Fatalf("ping: %v", resp)
 	}
+	waitFor(t, 5*time.Second, "full beat after ping", func() bool { return nextBeat(t, sub).GetInventory() != nil })
 
 	// SetCaps.
 	resp := ctl(t, hc, "n1", &mycelv1.CtlRequest{Cmd: &mycelv1.CtlRequest_SetCaps{SetCaps: &mycelv1.SetCaps{

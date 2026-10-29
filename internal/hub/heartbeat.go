@@ -23,6 +23,9 @@ const (
 	beatWriteInterval = 2 * time.Second
 	// beatFlushTick is how often coalesced beats are checked for writing.
 	beatFlushTick = 500 * time.Millisecond
+	// askInventoryEvery bounds how often a node is asked for the inventory
+	// behind a hash the hub does not hold.
+	askInventoryEvery = 5 * time.Second
 )
 
 type pendingBeat struct {
@@ -37,7 +40,8 @@ type beatState struct {
 	known     map[string]string // node -> stored (or queued) inventory hash
 	lastWrite map[string]time.Time
 	pending   map[string]*pendingBeat
-	warned    map[string]bool // nodes already warned about oversized inventory
+	warned    map[string]bool      // nodes already warned about oversized inventory
+	asked     map[string]time.Time // node -> last inventory request
 
 	stop chan struct{}
 	done chan struct{}
@@ -46,7 +50,7 @@ type beatState struct {
 func newBeatState() *beatState {
 	return &beatState{
 		known: map[string]string{}, lastWrite: map[string]time.Time{},
-		pending: map[string]*pendingBeat{}, warned: map[string]bool{},
+		pending: map[string]*pendingBeat{}, warned: map[string]bool{}, asked: map[string]time.Time{},
 	}
 }
 
@@ -73,6 +77,19 @@ func (b *beatState) forget(node string) {
 	delete(b.lastWrite, node)
 	delete(b.pending, node)
 	delete(b.warned, node)
+	delete(b.asked, node)
+}
+
+// shouldAsk reports whether node may be asked for its inventory now, at
+// most once per askInventoryEvery.
+func (b *beatState) shouldAsk(node string, now time.Time) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if now.Sub(b.asked[node]) < askInventoryEvery {
+		return false
+	}
+	b.asked[node] = now
+	return true
 }
 
 // warnOnce reports whether node has not been warned about yet.
@@ -241,6 +258,14 @@ func (s *server) handleTelemetry(msg *nats.Msg) {
 			stored = ""
 		}
 		s.beats.setKnown(name, stored)
+	}
+	if h := hb.GetInventoryHash(); inv == nil && isLowerHex64(h) {
+		// A node sends its inventory once per connection and then only the
+		// hash. When the hub does not hold the inventory behind it (the full
+		// beat came before the hub subscribed, say), a ping asks for it again.
+		if known, _ := s.beats.knownHash(name); known != h && s.beats.shouldAsk(name, time.Now()) {
+			s.sendCtl(context.Background(), name, &mycelv1.CtlRequest{Cmd: &mycelv1.CtlRequest_Ping{Ping: &mycelv1.Ping{}}}, false)
+		}
 	}
 	if p := s.beats.record(name, time.Now(), inv, hash); p != nil {
 		s.writeBeat(name, p)

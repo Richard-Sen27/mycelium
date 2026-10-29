@@ -129,6 +129,9 @@ message AgentCtl {
   string reason = 3;
 }
 
+// Ping asks for a full heartbeat: the hub does not hold the inventory
+// behind the hash the node's beats carry. The node answers Ok and sends
+// the inventory with its next beat.
 message Ping {}
 
 message Revoked {

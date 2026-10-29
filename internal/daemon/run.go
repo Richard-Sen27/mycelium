@@ -599,6 +599,7 @@ func (n *node) handleCtl(nc *nats.Conn, m *nats.Msg) {
 	} else {
 		switch cmd := req.GetCmd().(type) {
 		case *mycelv1.CtlRequest_Ping:
+			after = n.resendInventory // the hub lacks the inventory behind our hash
 		case *mycelv1.CtlRequest_SetCaps:
 			if err := n.setCaps(cmd.SetCaps.GetCapsEnabled().GetNames()); err != nil {
 				n.log.Warn("set caps", "err", err)
@@ -774,6 +775,16 @@ func (n *node) setInventoryBackends(list []string) {
 	if changed {
 		n.wake()
 	}
+}
+
+// resendInventory makes the next heartbeat carry the full inventory: the
+// hub pings a node when it does not hold the inventory behind the hash the
+// node's beats carry.
+func (n *node) resendInventory() {
+	n.mu.Lock()
+	n.sentHash = ""
+	n.mu.Unlock()
+	n.wake()
 }
 
 func (n *node) heartbeatLoop(ctx context.Context) {
