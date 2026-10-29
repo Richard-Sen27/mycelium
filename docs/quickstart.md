@@ -116,5 +116,5 @@ Open the UI with `mycel ui` on the Mac (it opens the hub at `https://localhost:7
 ## When the PC cannot reach the Mac
 
 - Try the Mac's LAN IP instead of `<mac-name>.local` (Windows resolves `.local` names only on networks that pass mDNS). The address is fixed at `hub init`, so settle it before other machines join.
-- `mycel hub discover` lists hubs announced on the local network, and `mycel join` falls back to them by CA fingerprint. These commands come with phase 7's discovery package (P7-move) and may not be in your build yet.
-- Venue Wi-Fi that blocks traffic between devices needs a relay: `mycel hub init … --tunnel <relay url>`. The relay comes with phase 7's tunnel package (P7-relay) and may not be in your build yet.
+- `mycel hub discover` lists hubs announced on the local network, and `mycel join` falls back to them by CA fingerprint when the token's address does not answer.
+- Venue Wi-Fi that blocks traffic between devices needs a relay on a machine with a public address: run `mycel relay serve` there, create the hub's relay URL with `mycel relay token create --name <hub> --host <relay host>`, and paste it into `mycel hub init --tunnel -` (or `mycel hub tunnel set -` for an existing hub; restart the daemon). `mycel hub tunnel status` shows the connection.

@@ -198,3 +198,22 @@ func TestHubTunnelStatus(t *testing.T) {
 		t.Fatalf("status --json: %+v", res)
 	}
 }
+
+func TestRelayParsePorts(t *testing.T) {
+	got, err := parsePorts("443, 7778,443")
+	if err != nil || len(got) != 2 || got[443] != ":443" || got[7778] != ":7778" {
+		t.Fatalf("parsePorts: %v %v", got, err)
+	}
+	got, err = parsePorts("127.0.0.1:8443,[::1]:7778")
+	if err != nil || got[8443] != "127.0.0.1:8443" || got[7778] != "[::1]:7778" {
+		t.Fatalf("parsePorts with hosts: %v %v", got, err)
+	}
+	if got, err := parsePorts("127.0.0.1:0443"); err != nil || got[443] != "127.0.0.1:443" {
+		t.Fatalf("parsePorts(0443): %v %v", got, err)
+	}
+	for _, bad := range []string{"", ",", "0", "65536", "x", "+443", "127.0.0.1:+443", "-1", "127.0.0.1:", "127.0.0.1:443,10.0.0.1:443", "a:b:c"} {
+		if _, err := parsePorts(bad); err == nil {
+			t.Errorf("parsePorts(%q) accepted", bad)
+		}
+	}
+}

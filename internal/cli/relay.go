@@ -36,23 +36,34 @@ func relayDataDir(flag string) (string, error) {
 	return filepath.Join(dirs.Data, "relay"), nil
 }
 
-// parsePorts parses "443,7778".
-func parsePorts(s string) ([]int, error) {
-	var out []int
-	seen := map[int]bool{}
+// parsePorts parses "443,7778" into public port -> listen address
+// (":443"). An entry may name the address to bind, "127.0.0.1:443" or
+// "[::1]:443", e.g. for a relay with several addresses; the port is what
+// hubs map in their tunnel ports.
+func parsePorts(s string) (map[int]string, error) {
+	out := map[int]string{}
 	for _, f := range strings.Split(s, ",") {
 		f = strings.TrimSpace(f)
 		if f == "" {
 			continue
 		}
-		p, err := strconv.Atoi(f)
-		if err != nil || p < 1 || p > 65535 {
+		host, ps := "", f
+		if strings.Contains(f, ":") {
+			h, p, err := net.SplitHostPort(f)
+			if err != nil {
+				return nil, fmt.Errorf("invalid port %q", f)
+			}
+			host, ps = h, p
+		}
+		p, err := strconv.Atoi(ps)
+		if err != nil || p < 1 || p > 65535 || strings.Trim(ps, "0123456789") != "" { // no "+443"
 			return nil, fmt.Errorf("invalid port %q", f)
 		}
-		if !seen[p] {
-			seen[p] = true
-			out = append(out, p)
+		addr := net.JoinHostPort(host, strconv.Itoa(p))
+		if prev, ok := out[p]; ok && prev != addr {
+			return nil, fmt.Errorf("port %d given twice", p)
 		}
+		out[p] = addr
 	}
 	if len(out) == 0 {
 		return nil, errors.New("no ports given")
@@ -78,11 +89,7 @@ func (a *app) relayServeCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			pub := make(map[int]string, len(ports))
-			for _, p := range ports {
-				pub[p] = ":" + strconv.Itoa(p)
-			}
-			r, err := tunnel.NewRelay(tunnel.RelayOptions{DataDir: dir, Listen: listen, Public: pub, Logger: a.log})
+			r, err := tunnel.NewRelay(tunnel.RelayOptions{DataDir: dir, Listen: listen, Public: ports, Logger: a.log})
 			if err != nil {
 				return err
 			}
@@ -96,7 +103,7 @@ func (a *app) relayServeCmd() *cobra.Command {
 	}
 	f := cmd.Flags()
 	f.StringVar(&listen, "listen", ":"+strconv.Itoa(tunnel.DefaultControlPort), "control listener the hub connects to")
-	f.StringVar(&public, "public", "443,7778", "public ports forwarded to the hub (comma-separated)")
+	f.StringVar(&public, "public", "443,7778", "public ports forwarded to the hub (comma-separated; an entry may be host:port to bind one address)")
 	f.StringVar(&dataDir, "data-dir", "", "relay state: certificate and token hashes (default <data dir>/relay)")
 	return cmd
 }

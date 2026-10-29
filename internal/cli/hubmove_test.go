@@ -71,7 +71,7 @@ func TestHubDiscover(t *testing.T) {
 	}
 }
 
-// TestHubMoveCLI walks init, export (running hub), redirect, --follow and
+// TestHubMoveCLI walks init, export (running hub), redirect, --follow-redirect and
 // import with a real hub.
 func TestHubMoveCLI(t *testing.T) {
 	oldHome := t.TempDir()
@@ -164,7 +164,7 @@ func TestHubMoveCLI(t *testing.T) {
 		t.Fatalf("moved answer: %+v", r)
 	}
 	if f, _ := config.Load(dirs); f.HubURL != hubURL {
-		t.Fatalf("config changed without --follow: %s", f.HubURL)
+		t.Fatalf("config changed without --follow-redirect: %s", f.HubURL)
 	}
 	if r := newApp().run("whoami", "--follow-redirect"); r.code != exitError || !strings.Contains(r.stderr, "now points at https://new.example.com:7777") {
 		t.Fatalf("--follow-redirect: %+v", r)

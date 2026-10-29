@@ -107,7 +107,7 @@
 //	mycel relay token create --name <hub> | ls | revoke <name>
 //	mycel service install [--role node|hub] | uninstall | start | stop | status | logs [-f]
 //	mycel join <token> [--hub-url u]                         (now: falls back to mDNS by CA fingerprint; follows a signed redirect)
-//	mycel ... --follow                                       (any command answered with "hub moved": verify and update config.yaml)
+//	mycel ... --follow-redirect                              (any command answered with "hub moved": verify and update config.yaml)
 package cli
 
 import (
@@ -190,7 +190,7 @@ type app struct {
 	daemonRun  func(context.Context, daemon.Options, chan<- daemon.Ready) error
 
 	// Phase 7 (hubmove.go): the mDNS browser and the passphrase prompt
-	// (nil: the real ones), and --follow.
+	// (nil: the real ones), and --follow-redirect.
 	browser        discovery.Browser
 	readPassword   func(prompt string) ([]byte, error)
 	followRedirect bool

@@ -116,10 +116,19 @@ func checkRace(t *testing.T, what, stderr string, exit int) {
 // runCLI runs the binary to completion and returns its output and exit code.
 func runCLI(t *testing.T, env []string, args ...string) (stdout, stderr string, exit int) {
 	t.Helper()
+	return runCLIStdin(t, env, "", args...)
+}
+
+// runCLIStdin is runCLI with stdin (e.g. a secret read with `-`).
+func runCLIStdin(t *testing.T, env []string, stdin string, args ...string) (stdout, stderr string, exit int) {
+	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), cliTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, binPath, args...) //nolint:gosec // the binary under test
 	cmd.Env = env
+	if stdin != "" {
+		cmd.Stdin = strings.NewReader(stdin)
+	}
 	var out, errb bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &errb
@@ -426,6 +435,14 @@ func startHubWith(t *testing.T, o hubOptions) *Hub {
 // ports.
 func initHubAt(t *testing.T, root string) *Hub {
 	t.Helper()
+	return initHubWith(t, root, false)
+}
+
+// initHubWith is initHubAt; mdns leaves the hub's mDNS advertising on
+// (hub.yaml), for a hub started with the test binary's fake mDNS
+// (MYCEL_FAKE_MDNS_DIR and MYCEL_NO_MDNS=0 in DaemonEnv).
+func initHubWith(t *testing.T, root string, mdns bool) *Hub {
+	t.Helper()
 	if root == "" {
 		root = t.TempDir()
 	}
@@ -438,15 +455,17 @@ func initHubAt(t *testing.T, root string) *Hub {
 		BusPort: ports[1],
 	}
 	api := "127.0.0.1:" + strconv.Itoa(h.APIPort)
-	out, errOut, code := runCLI(t, childEnv("MYCEL_HOME="+h.Home),
-		"hub", "init",
-		"--advertise", "https://"+api,
+	args := []string{"hub", "init",
+		"--advertise", "https://" + api,
 		"--api-listen", api,
-		"--bus-listen", "127.0.0.1:"+strconv.Itoa(h.BusPort),
+		"--bus-listen", "127.0.0.1:" + strconv.Itoa(h.BusPort),
 		"--trust-domain", "e2e",
 		"--node-name", "hub-node",
-		"--no-mdns", // tests never advertise on the network
-		"--json")
+		"--json"}
+	if !mdns {
+		args = append(args, "--no-mdns") // tests never advertise on the network
+	}
+	out, errOut, code := runCLI(t, childEnv("MYCEL_HOME="+h.Home), args...)
 	if code != 0 {
 		t.Fatalf("hub init: exit %d\nstdout: %s\nstderr: %s", code, out, errOut)
 	}
@@ -474,7 +493,9 @@ func (h *Hub) Start() {
 func (h *Hub) start() error {
 	offset := fileSize(filepath.Join(h.Root, "hub.stdout.log"))
 	args := append([]string{"daemon", "--json", "--local-addr", "127.0.0.1:0"}, h.DaemonArgs...)
-	h.Proc = startProc(h.t, "hub", h.Root, append(childEnv("MYCEL_HOME="+h.Home), h.DaemonEnv...), args...)
+	// MYCEL_NO_MDNS=1 next to --no-mdns: a hub in a test never advertises
+	// (DaemonEnv may override it to use the fake mDNS directory).
+	h.Proc = startProc(h.t, "hub", h.Root, append(childEnv("MYCEL_HOME="+h.Home, "MYCEL_NO_MDNS=1"), h.DaemonEnv...), args...)
 	var ready daemonReady
 	if err := h.Proc.waitReadyErr(offset, &ready); err != nil {
 		return err

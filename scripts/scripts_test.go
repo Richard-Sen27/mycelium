@@ -261,6 +261,21 @@ func TestShellcheck(t *testing.T) {
 	}
 }
 
+// TestInstallPs1Parses parses install.ps1 with PowerShell's own parser
+// (pwsh on any OS, e.g. a Mac with PowerShell installed).
+func TestInstallPs1Parses(t *testing.T) {
+	ps, err := exec.LookPath("pwsh")
+	if err != nil {
+		t.Skip("pwsh not installed")
+	}
+	script := `$errs = $null; [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path 'install.ps1'), [ref]$null, [ref]$errs); ` +
+		`if ($errs.Count -gt 0) { $errs | ForEach-Object { $_.ToString() }; exit 1 }`
+	out, err := exec.Command(ps, "-NoProfile", "-NonInteractive", "-Command", script).CombinedOutput() //nolint:gosec // fixed script
+	if err != nil {
+		t.Fatalf("install.ps1 does not parse: %v\n%s", err, out)
+	}
+}
+
 // TestInstallPs1DryRun runs install.ps1 -DryRun when PowerShell is available
 // (Windows CI runners have it).
 func TestInstallPs1DryRun(t *testing.T) {

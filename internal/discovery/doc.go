@@ -23,7 +23,9 @@
 // Library: github.com/brutella/dnssd (pure Go on macOS, Linux and
 // Windows; see docs/decisions.md D026). Tests inject a fake browser and
 // never touch the network unless MYCEL_TEST_MDNS=1 (browsing everywhere,
-// advertising on Linux only).
+// advertising on Linux only). The test build of the binary (build tag
+// fakeharness) replaces mDNS with a directory shared by the processes of
+// one test (internal/discovery/fakemdns, SetOverride).
 package discovery
 
 import (
@@ -61,6 +63,9 @@ type AdvertiseOptions struct {
 
 // Advertise starts announcing h; it stops when ctx ends or Close is called.
 func Advertise(ctx context.Context, h Hub, opts AdvertiseOptions) (Advertiser, error) {
+	if o := loadOverride(); o != nil {
+		return o.Advertise(ctx, h, opts)
+	}
 	return advertise(ctx, h, opts)
 }
 
@@ -71,7 +76,12 @@ type Browser interface {
 }
 
 // Default returns the mDNS browser.
-func Default() Browser { return mdnsBrowser{} }
+func Default() Browser {
+	if o := loadOverride(); o != nil {
+		return o.Browser()
+	}
+	return mdnsBrowser{}
+}
 
 // Find returns every hub with the given CA fingerprint seen within timeout
 // (an impostor can copy a fingerprint, so callers probe each in turn over

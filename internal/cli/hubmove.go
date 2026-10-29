@@ -524,7 +524,7 @@ func (a *app) hubRedirectCmd() *cobra.Command {
 				when = "sent on the next start to"
 			}
 			_, err = fmt.Fprintf(a.stdout, "This hub now redirects to %s (bus %s).\nThe signed redirect is %s %d nodes; every call to this hub is answered with it.\n"+
-				"CLIs follow with --follow. To undo: remove moved_to from %s and restart the hub.\n",
+				"CLIs follow with --follow-redirect. To undo: remove moved_to from %s and restart the hub.\n",
 				res.HubURL, res.BusURL, when, res.Nodes, filepath.Join(hubDir, "hub.yaml"))
 			return err
 		},

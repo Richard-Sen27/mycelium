@@ -142,9 +142,10 @@ port_free "$BUS_PORT" || die "port $BUS_PORT is in use (try --port)"
 
 # --- the hub ----------------------------------------------------------------
 step "1. a hub (MYCEL_HOME=$HUB_HOME)"
-say "\$ mycel hub init --advertise https://127.0.0.1:$PORT --node-name hub-node"
+# --no-mdns: a hub on loopback for one machine has nothing to announce on the network.
+say "\$ mycel hub init --advertise https://127.0.0.1:$PORT --node-name hub-node --no-mdns"
 init="$(hub_cli hub init --advertise "https://127.0.0.1:$PORT" --api-listen "127.0.0.1:$PORT" \
-	--bus-listen "127.0.0.1:$BUS_PORT" --trust-domain demo --node-name hub-node --json 2>/dev/null)"
+	--bus-listen "127.0.0.1:$BUS_PORT" --trust-domain demo --node-name hub-node --no-mdns --json 2>/dev/null)"
 say "hub initialised; trust domain $(printf '%s' "$init" | json_field trust_domain), CA fingerprint $(printf '%s' "$init" | json_field ca_fingerprint | cut -c1-16)…"
 say "(the admin API key is printed once by hub init; the demo keeps it in $HUB_HOME/config.yaml)"
 

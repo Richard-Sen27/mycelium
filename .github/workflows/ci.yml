@@ -32,6 +32,16 @@ jobs:
       - run: go build ./...
       - run: go test ./...
       - run: go test -tags e2e -count=1 -timeout 10m ./test/e2e/...
+      # Phase 7: real mDNS advertising and browsing, Linux runners only (on a
+      # workstation a responder could disturb the machine's own names; the
+      # e2e run above uses the test binary's fake mDNS).
+      - name: real mDNS
+        if: runner.os == 'Linux'
+        env:
+          MYCEL_TEST_MDNS: "1"
+        run: |
+          go test -count=1 -run 'TestBrowseOnly|TestRealMulticast' ./internal/discovery/
+          go test -tags e2e -count=1 -timeout 5m -run TestDiscoveryRealMulticast ./test/e2e/...
 
   # The UI: typecheck, unit tests (including the CLI parity check) and the
   # size budget (initial load under 1 MiB without the 3D chunk; the job
