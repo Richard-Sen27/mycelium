@@ -90,23 +90,34 @@ Open issues: no GPU on this Mac; GPU broker tests use a fake NVML/nvidia-smi.
 
 ## Phase 6 — UI
 
-Status: in progress (app shell merged; backend and the two views packages in progress)
+Status: done locally (all packages merged; phase 6 acceptance tests green: node read scope proven over every mutating RPC, UI served with events and sign-in, CLI parity test, 1 MiB budget in CI at 636 KiB, browser smoke test passing with headless Chrome; the Windows and Linux CI runs need the owner's push)
 
 | Package | Owns | State | Notes |
 | --- | --- | --- | --- |
-| P6-api | `internal/hub` (events, search, audit, passkeys, push, node read scope, SPA serving), `internal/daemon` (SPA serving, hub proxy), `internal/cli` (ui, audit, search) | in progress | round 1 |
+| P6-api | `internal/hub` (events, search, audit, passkeys, push, node read scope, SPA serving), `internal/daemon` (SPA serving, hub proxy), `internal/cli` (ui, audit, search) | merged | round 1 |
 | P6-web-core | `web/` toolchain, generated client, design system, shell, routing, sign-in, command bar, PWA shell | merged | round 1 |
-| P6-views-a | `web/` constellation (r3f chunk), lists and search, nodes, agents | in progress | round 2 |
-| P6-views-b | `web/` channels, approvals, sandbox inspector, traces and cost | in progress | round 2 |
-| P6-e2e | `test/**`, `web/` size check and smoke test | todo | round 3 |
+| P6-views-a | `web/` constellation (r3f chunk), lists and search, nodes, agents | merged | round 2 |
+| P6-views-b | `web/` channels, approvals, sandbox inspector, traces and cost | merged | round 2 |
+| P6-e2e | `test/**`, `web/` size check and smoke test | merged | round 3 |
 
 ## Phase 7 — Team rollout
 
-Status: in progress (contracts written; install package in progress; relay and move packages start after the phase 6 backend merges)
+Status: in progress (every package merged: install, sandbox setup, relay, discovery/redirect/export; acceptance tests in progress)
 
 | Package | Owns | State | Notes |
 | --- | --- | --- | --- |
-| P7-relay | `internal/tunnel` (relay server, hub client, ACME), `mycel relay`, hub tunnel wiring | todo | round 1 |
-| P7-move | `internal/discovery`, join discovery, Redirect ctl and following (node, CLI, join), `identity.SignRedirect/VerifyRedirect`, hub export/import/redirect | todo | round 1 |
-| P7-install | `scripts/`, `internal/service`, `.goreleaser.yaml`, release workflow, docs/quickstart.md, scripts/demo.sh | in progress | round 1 |
-| P7-e2e | `test/**` (relay tunnel, discovery with a fake browser, export/import/redirect follow, install script dry runs, demo walkthrough) | todo | round 2 |
+| P7-relay | `internal/tunnel` (relay server, hub client, ACME), `mycel relay`, hub tunnel wiring | merged | round 1 |
+| P7-move | `internal/discovery`, join discovery, Redirect ctl and following (node, CLI, join), `identity.SignRedirect/VerifyRedirect`, hub export/import/redirect | merged | round 1 |
+| P7-install | `scripts/`, `internal/service`, `.goreleaser.yaml`, release workflow, docs/quickstart.md, scripts/demo.sh | merged | real launchd round trip and the demo pass on this Mac; Windows task, install.ps1 and the Linux systemd unit need the owner (see below) |
+| P7-sandbox-setup | `internal/sandbox/setup`, `mycel sandbox setup|status` (creates the Windows `mycel-sbx` WSL2 distro with gVisor; Lima and gVisor checks elsewhere) | todo | after P7-install: nothing created the Windows distro before |
+| P7-e2e | `test/**` (relay tunnel, discovery with a fake browser, export/import/redirect follow, install script dry runs, demo walkthrough) | in progress | round 2 |
+
+### Owner verification for phase 7 (cannot be done on this Mac)
+
+- Windows: the logon task imports from its UTF-16 XML; `conhost --headless` opens no window; the `.cmd` loop restarts after a crash but not after exit 0 or 3; `schtasks /End` plus the launcher-first kill stops everything; panics land in `daemon.log`; `install.ps1` on Windows PowerShell 5.1 (TLS 1.2 download, Get-FileHash, `%VAR%` PATH entries preserved, upgrade while the daemon runs); `mycel sandbox setup` creating the `mycel-sbx` WSL2 distro.
+- Windows sandbox setup (x86_64 only for now): `wsl --list --quiet` text and exit code on a fresh `wsl --install --no-distribution` machine (also non-English Windows); `wsl --import` of the Alpine 3.24.3 minirootfs as WSL 2 and the error text when the Virtual Machine Platform is off; wsl.conf (automount, interop, `[gpu]`, systemd off) taking effect after `--terminate` with `-u root --exec` and stdin still working; `apk` reaching the network over WSL NAT; streaming ~180 MB of tar through `wsl.exe` stdin; `runsc --network=none --ignore-cgroups do true` as root without systemd and `runsc --version` printing the pinned release; the wsl2-gvisor backend's `Available` and a real job after setup; whether it fits the ten-minute quickstart.
+- Linux sandbox setup: `--yes` as root installing `runsc` + `gvisor-bin/` into `/usr/local/bin` on amd64 and arm64 (the arm64 digest is the published value, never downloaded here); `--yes` as a user with the PATH hint; the cgroup v2 and user-namespace checks on real distros.
+- macOS sandbox setup: the Lima part (`Prepare` plus one throwaway VM, Ctrl-C during boot destroying it) ran only against fakes here; `sandbox status` ran against the real Lima 2.1.1.
+- Linux: `mycel service install/status/stop/start/uninstall` on a real systemd user session, `StandardOutput=append:` (systemd 240+), `loginctl enable-linger`.
+- Release: push main, tag `v*`, confirm `release-check` and `release.yml` are green; the install scripts need a public release; replace the placeholder LICENSE first.
+- Network: a public domain for ACME; a VPS for the relay; the ten-minute two-machine quickstart.

@@ -6,7 +6,7 @@ The full design is in [docs/spec.md](docs/spec.md). Progress and decisions: [doc
 
 ## Status
 
-Phases 1–4 work: one binary; a hub with users and API keys; nodes that join with one-time tokens and authenticate with mTLS; channels, direct messages, inboxes and blackboards; `mycel mcp` for Claude Code (and Codex) with hooks; local worker agents with budgets; jobs in sandboxes (Lima VMs on macOS, gVisor on Linux and Windows WSL2, compile-checked there) with an egress proxy and artifacts. Phase 5 adds brokers (Ollama, GPU, Docker) behind per-grant credentials, grants with approvals and auto rules, per-node sharing settings that the owner can only tighten locally, and the kill switch (pause, channel freeze, network freeze). The web UI (phase 6) is in progress.
+Phases 1–4 work: one binary; a hub with users and API keys; nodes that join with one-time tokens and authenticate with mTLS; channels, direct messages, inboxes and blackboards; `mycel mcp` for Claude Code (and Codex) with hooks; local worker agents with budgets; jobs in sandboxes (Lima VMs on macOS, gVisor on Linux and Windows WSL2, compile-checked there) with an egress proxy and artifacts. Phase 5 adds brokers (Ollama, GPU, Docker) behind per-grant credentials, grants with approvals and auto rules, per-node sharing settings that the owner can only tighten locally, and the kill switch (pause, channel freeze, network freeze). Phase 6 adds the web UI: one embedded app serving as the hub's admin UI and every node's read-only network view, with passkeys, push notifications and a 3D constellation. Phase 7 (relay tunnel, Let's Encrypt, mDNS discovery, hub export/import with signed redirects, install scripts, the background service, releases, sandbox setup, quickstart and demo) is merged and its acceptance tests are in progress.
 
 ## Build and test
 
@@ -92,6 +92,19 @@ mycel job logs <id> --follow
 mycel artifacts ls --job <id>
 ```
 
+## The web UI
+
+The binary embeds a single-page app. The hub serves it at its HTTPS address (sign in with an API key, then add a passkey in Settings); every node serves a read-only copy on `http://127.0.0.1:7777` for its owner:
+
+```
+mycel ui                 # opens this machine's node UI in the browser (network view read-only, "This machine" restrict-only)
+mycel hub ui-url         # prints the hub UI address (admin: every CLI action, approvals, freezes)
+mycel search "train"     # the same search the ⌘K palette uses
+mycel audit ls --trace <id>
+```
+
+Views: the constellation (a 3D map of nodes, agents, jobs and channels with messages travelling as particles), channels, approvals (also the phone's start screen, with push notifications), jobs with a sandbox inspector, grants, nodes, agents, traces and cost, and ⌘K for every command. Building the UI needs Node 22 and pnpm: `make web`, then `make build`; without a build the binary serves a "UI not built" page.
+
 ## Sharing, grants and the kill switch
 
 ```
@@ -118,4 +131,28 @@ mycel unfreeze --all
 ```
 
 Approvals also appear on the hub's `/ui/approvals` page (sign in with an API key). Grants attach the resource to the agent's or job's sandbox through a broker: an Ollama token scoped to the granted models, a leased GPU, or a Docker endpoint that only creates no-network containers under the grant's limits. The host Docker socket is never exposed.
+
+## Reaching and moving the hub
+
+```
+# a hub on a laptop: nodes on the same network find it by mDNS; joins fall back to it when the token's address fails
+mycel hub discover
+
+# a hub behind venue Wi-Fi: a relay on any machine with a public address forwards TCP to it (ciphertext only)
+mycel relay serve --listen :7790 --public 443,7778          # on the relay machine
+mycel relay token create --name home-hub --host relay.example.com
+mycel hub tunnel set -                                       # on the hub, paste the relay URL on stdin
+mycel hub tunnel status
+
+# a public hub: certificates from Let's Encrypt for browsers (nodes and CLIs keep pinning the hub's own CA)
+mycel hub init --advertise https://hub.example.com --acme --acme-email you@example.com
+
+# moving the hub to another machine
+mycel hub export --out hub.mycelhub                          # passphrase-encrypted, streamed, holds the CA
+mycel hub import hub.mycelhub --advertise https://new-hub:7777   # on the new machine
+mycel hub redirect https://new-hub:7777                      # on the old hub: nodes, CLIs and joins follow the signed redirect
+mycel nodes ls --follow-redirect                             # a CLI that hits "hub moved" updates its config
+```
+
+`scripts/demo.sh` runs a hub and a second node on one machine and walks through posting, a job, a grant and the UI; `docs/quickstart.md` is the ten-minute path for a Mac and a Windows machine.
 
