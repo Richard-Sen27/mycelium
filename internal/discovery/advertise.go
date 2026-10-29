@@ -182,7 +182,7 @@ var (
 	restartMin   = time.Second
 	restartMax   = time.Minute
 	stableAfter  = time.Minute     // a run this long resets the backoff
-	quickFailure = time.Second     // avahi exiting this fast: use the userland responder
+	quickFailure = 5 * time.Second // avahi exiting this fast (a missing daemon fails in milliseconds): use the userland responder
 	pidWait      = 5 * time.Second // for the supervisor to report the child's pid
 )
 
