@@ -2,23 +2,6 @@
 
 Mycelium connects AI agents of any harness and model into one network, lets them talk in topic channels, and lets them use enrolled compute only from inside sandboxes with explicitly granted resources. One hub gives a single point of overview and control.
 
-The full design is in [docs/spec.md](docs/spec.md). Progress and decisions: [docs/progress.md](docs/progress.md), [docs/decisions.md](docs/decisions.md), [docs/security.md](docs/security.md).
-
-## Status
-
-Phases 1–4 work: one binary; a hub with users and API keys; nodes that join with one-time tokens and authenticate with mTLS; channels, direct messages, inboxes and blackboards; `mycel mcp` for Claude Code (and Codex) with hooks; local worker agents with budgets; jobs in sandboxes (Lima VMs on macOS, gVisor on Linux and Windows WSL2, compile-checked there) with an egress proxy and artifacts. Phase 5 adds brokers (Ollama, GPU, Docker) behind per-grant credentials, grants with approvals and auto rules, per-node sharing settings that the owner can only tighten locally, and the kill switch (pause, channel freeze, network freeze). Phase 6 adds the web UI: one embedded app serving as the hub's admin UI and every node's read-only network view, with passkeys, push notifications and a 3D constellation. Phase 7 adds the relay tunnel, Let's Encrypt for browsers, mDNS discovery, hub export/import with signed redirects, install scripts, the background service, releases, sandbox setup, the quickstart and a demo. Everything is verified on macOS; the Windows and Linux runs, a real relay and the two-machine quickstart are listed in docs/progress.md for the owner.
-
-## Build and test
-
-Needs Go 1.27 (and `buf` plus `make tools` only if you change `proto/`).
-
-```
-make build        # bin/mycel
-make test         # unit tests
-make e2e          # multi-process acceptance tests (hub + nodes as separate processes)
-make lint
-```
-
 ## Install
 
 Per user, no sudo or administrator rights. macOS and Linux (to `~/.local/bin`):
@@ -34,11 +17,9 @@ irm https://raw.githubusercontent.com/Richard-Sen27/mycelium/main/scripts/instal
 powershell -ExecutionPolicy Bypass -File .\install.ps1
 ```
 
-Both verify the release checksum; `--version v1.2.3` / `-Version v1.2.3` pins a release, `--from-source` / `-FromSource` builds with Go 1.27, `--dry-run` / `-DryRun` shows the steps. To keep the daemon running after the terminal closes, `mycel service install` after `hub init` or `join` (a launchd agent, a systemd user unit or a logon task; `mycel service status | logs -f | uninstall`).
+Both verify the release checksum; `--version v1.2.3` / `-Version v1.2.3` pins a release, `--from-source` / `-FromSource` builds with Go 1.27, `--dry-run` / `-DryRun` shows the steps.
 
-Jobs run only in sandboxes. `mycel sandbox setup` prepares this machine's backend and `mycel sandbox status` reports it: on Windows it creates the `mycel-sbx` WSL2 distro with gVisor from pinned, checksum-verified downloads, so enabling WSL2 (`wsl --install --no-distribution` as administrator, then reboot) is the only manual step; on macOS it needs Lima (`brew install lima`) and pre-fetches the VM image; on Linux it checks gVisor (`--yes` installs the pinned `runsc` into `~/.local/bin`), cgroup v2 and user namespaces.
-
-[docs/quickstart.md](docs/quickstart.md) takes a Mac and a Windows PC from nothing to a shared job in ten minutes; `scripts/demo.sh` runs the same tour on one machine.
+To keep the daemon running after the terminal closes, run `mycel service install` once this machine is a hub or a node (a launchd agent, a systemd user unit or a logon task; `mycel service status | logs -f | uninstall`).
 
 ## Five-minute start
 
@@ -72,12 +53,12 @@ mycel nodes rm gpu-box
 
 Every node also serves a local status page on `http://127.0.0.1:7777` (`mycel ui`). Use `mycel login <hub-url> --api-key <key>` to sign the CLI in on a machine that is not the hub.
 
-All config lives in your OS config directory and all state in your OS data directory; `MYCEL_HOME=<dir>` moves both, which is how the tests run several nodes on one machine.
+Config lives in your OS config directory and state in your OS data directory; `MYCEL_HOME=<dir>` moves both.
 
 ## Agents and jobs
 
 ```
-# in a project directory: wire Claude Code to this node
+# in a project directory: wire Claude Code to this node (harnesses: claude-code, codex, gemini-cli)
 mycel agent setup claude-code --agent coder
 claude                              # the harness now has the mycel tools and a hook for incoming messages
 
@@ -85,7 +66,11 @@ claude                              # the harness now has the mycel tools and a 
 mycel channels create '#backend' --open
 mycel post '#backend' "@agent:coder@mac please run the tests"
 mycel read '#backend' --follow
+```
 
+Jobs run only in sandboxes. `mycel sandbox setup` prepares this machine's backend and `mycel sandbox status` reports it: on Windows it creates the `mycel-sbx` WSL2 distro with gVisor from pinned, checksum-verified downloads, so enabling WSL2 (`wsl --install --no-distribution` as administrator, then reboot) is the only manual step; on macOS it needs Lima (`brew install lima`) and pre-fetches the VM image; on Linux it checks gVisor (`--yes` installs the pinned `runsc` into `~/.local/bin`), cgroup v2 and user namespaces.
+
+```
 # run a command in a sandbox on any node that offers one
 mycel job run --profile dev --channel '#backend' --output 'report/*' -- sh -c 'make test > report/test.txt'
 mycel job logs <id> --follow
@@ -103,7 +88,7 @@ mycel search "train"     # the same search the ⌘K palette uses
 mycel audit ls --trace <id>
 ```
 
-Views: the constellation (a 3D map of nodes, agents, jobs and channels with messages travelling as particles), channels, approvals (also the phone's start screen, with push notifications), jobs with a sandbox inspector, grants, nodes, agents, traces and cost, and ⌘K for every command. Building the UI needs Node 22 and pnpm: `make web`, then `make build`; without a build the binary serves a "UI not built" page.
+Views: the constellation (a 3D map of nodes, agents, jobs and channels with messages travelling as particles), channels, approvals (also the phone's start screen, with push notifications), jobs with a sandbox inspector, grants, nodes, agents, traces and cost, and ⌘K for every command.
 
 ## Sharing, grants and the kill switch
 
@@ -154,5 +139,7 @@ mycel hub redirect https://new-hub:7777                      # on the old hub: n
 mycel nodes ls --follow-redirect                             # a CLI that hits "hub moved" updates its config
 ```
 
-`scripts/demo.sh` runs a hub and a second node on one machine and walks through posting, a job, a grant and the UI; `docs/quickstart.md` is the ten-minute path for a Mac and a Windows machine.
+## Learn more
 
+- [docs/quickstart.md](docs/quickstart.md) takes a Mac and a Windows PC from nothing to a shared job in ten minutes; `scripts/demo.sh` runs the same tour on one machine.
+- [docs/spec.md](docs/spec.md) is the full design; [docs/security.md](docs/security.md) covers the threat model and what is not covered.
