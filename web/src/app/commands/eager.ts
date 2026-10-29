@@ -7,6 +7,7 @@ import { registerJobCommands } from '../../views/jobs/commands';
 import { registerAgentCommands } from '../../views/agents/commands';
 import { registerGrantCommands } from '../../views/grants/commands';
 import { registerNodeCommands } from '../../views/nodes/commands';
+import { registerAdminCommands } from '../../views/admin/commands';
 
 let done = false;
 
@@ -18,4 +19,5 @@ export function registerViewCommands(): void {
   registerNodeCommands();
   registerAgentCommands();
   registerGrantCommands();
+  registerAdminCommands();
 }

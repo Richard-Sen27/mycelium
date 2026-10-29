@@ -32,8 +32,9 @@ const (
 var proxyIdle = proxyIdleTimeout
 
 // HubReadOnlyProcedures are the hub's Connect procedures a node read scope
-// may call: the same list as internal/hub (readOnlyMethods), checked by a
-// hub test.
+// may call: the same set as internal/hub's readOnlyMethods, and every entry
+// a read (List*, Get*, Watch*, Whoami, Search, FreezeStatus, StreamLogs,
+// BlackboardGet); both checked by internal/hub's TestReadOnlyListIsReads.
 var HubReadOnlyProcedures = []string{
 	"/mycel.v1.TokenService/ListJoinTokens",
 	"/mycel.v1.NodeService/ListNodes",
@@ -57,6 +58,7 @@ var HubReadOnlyProcedures = []string{
 	"/mycel.v1.EventService/ListAudit",
 	"/mycel.v1.JobService/GetJob",
 	"/mycel.v1.JobService/ListJobs",
+	"/mycel.v1.JobService/StreamLogs",
 	"/mycel.v1.JobService/ListProfiles",
 	"/mycel.v1.JobService/ListNodesForProfile",
 	"/mycel.v1.ArtifactService/ListArtifacts",

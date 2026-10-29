@@ -63,6 +63,29 @@ message Heartbeat {
   string inventory_hash = 3;
   uint64 uptime_seconds = 4;
   string sent_at = 5;
+  // Phase 6: the egress proxy's records since the last batch (at most 256
+  // per message, at most one batch per second per node), for the hub's
+  // audit log. Metadata only, never bodies.
+  repeated EgressRecord egress = 6;
+  uint64 egress_dropped = 7; // records the node dropped since the last batch (backlog over 4096)
+}
+
+// Connections or requests through a node's egress proxy: one record, or
+// several with the same sandbox, host, port, method and verdict within one
+// batch window (count, summed bytes).
+message EgressRecord {
+  string sandbox_id = 1; // empty when unauthenticated
+  string job_id = 2; // empty for a sandbox that does not run a job, and when unauthenticated
+  string host = 3;
+  uint32 port = 4;
+  bool allowed = 5;
+  string method = 6; // "CONNECT" or the HTTP method
+  uint64 bytes_in = 7;
+  uint64 bytes_out = 8;
+  uint64 count = 9; // connections this record stands for; 0 means 1
+  // The request failed proxy authentication: the sandbox it claimed is not
+  // trusted, so the record is bound to no sandbox and no job.
+  bool unauthenticated = 10;
 }
 
 // Sent by the hub to node.<name>.ctl as a request; the node replies with CtlResponse.

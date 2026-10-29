@@ -4,6 +4,7 @@ package e2e
 
 import (
 	"context"
+	"encoding/json"
 	"net"
 	"os"
 	"os/exec"
@@ -416,20 +417,23 @@ func TestJobEgressThroughProxy(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		devNull = "NUL"
 	}
-	curl := func(url string) string {
+	curl := func(url string) (string, string) {
 		t.Helper()
 		j := runJob(t, h, "", "--profile", "fake", "--timeout", "40s", "--",
 			"curl", "-sS", "-o", devNull, "--max-time", "30", "-w", "code=%{http_code} connect=%{http_connect}\n", url)
 		j = waitFinished(t, h, j.ID, 60*time.Second)
 		logs := jobLogs(t, h, j.ID)
 		t.Logf("curl %s: job %s exit %d\n%s", url, j.State, j.ExitCode, logs)
-		return logs
+		return j.ID, logs
 	}
 
 	// Outside the fake profile's allowlist (example.com, *.example.org).
-	if logs := curl("https://github.com/"); !strings.Contains(logs, "connect=403") && !strings.Contains(logs, "code=403") {
+	denied, logs := curl("https://github.com/")
+	if !strings.Contains(logs, "connect=403") && !strings.Contains(logs, "code=403") {
 		t.Errorf("curl https://github.com/ through the proxy: want a 403 from the proxy, got:\n%s", logs)
 	}
+	// Phase 6: the node forwards the proxy's records to the hub's audit log.
+	waitEgressAudit(t, h, denied, "github.com", false)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -437,8 +441,47 @@ func TestJobEgressThroughProxy(t *testing.T) {
 		t.Logf("skipping the allowed half: example.com does not resolve: %v", err)
 		return
 	}
-	if logs := curl("https://example.com/"); !strings.Contains(logs, "code=200") {
+	allowed, logs := curl("https://example.com/")
+	if !strings.Contains(logs, "code=200") {
 		t.Errorf("curl https://example.com/ through the proxy: want 200, got:\n%s", logs)
+	}
+	waitEgressAudit(t, h, allowed, "example.com", true)
+}
+
+// waitEgressAudit waits until the hub's audit log lists an egress record of
+// job for host with the given verdict (phase 6: the sandbox inspector's
+// Egress tab reads these rows).
+func waitEgressAudit(t *testing.T, h *Hub, job, host string, allowed bool) {
+	t.Helper()
+	wantOutcome := "denied"
+	if allowed {
+		wantOutcome = "allowed"
+	}
+	var resp struct {
+		Entries []struct {
+			Actor       string `json:"actor"`
+			Action      string `json:"action"`
+			Outcome     string `json:"outcome"`
+			DetailsJSON string `json:"details_json"`
+		} `json:"entries"`
+	}
+	if !waitFor(t, 15*time.Second, func() bool {
+		mustJSON(t, h.MustCLI("", "audit", "ls", "--resource", "job:"+job, "--json"), &resp)
+		for _, e := range resp.Entries {
+			var d struct {
+				Host    string `json:"host"`
+				Allowed bool   `json:"allowed"`
+			}
+			if e.Action != "egress" || json.Unmarshal([]byte(e.DetailsJSON), &d) != nil {
+				continue
+			}
+			if d.Host == host && d.Allowed == allowed && e.Outcome == wantOutcome && strings.HasPrefix(e.Actor, "node:") {
+				return true
+			}
+		}
+		return false
+	}) {
+		t.Errorf("the hub's audit log has no egress record of job %s for %s (allowed %v): %+v", job, host, allowed, resp.Entries)
 	}
 }
 

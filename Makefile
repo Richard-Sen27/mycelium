@@ -2,7 +2,7 @@ BIN := bin/mycel
 LDFLAGS := -X github.com/richard-sen27/mycelium/internal/version.Version=$(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 PKG := github.com/richard-sen27/mycelium
 
-.PHONY: all build test lint gen gen-check gen-web web web-check tools e2e clean
+.PHONY: all build test lint gen gen-check gen-web web web-check tools e2e e2e-ui clean
 
 all: build
 
@@ -14,6 +14,11 @@ test:
 
 e2e:
 	go test -tags e2e -count=1 -timeout 10m ./test/e2e/...
+
+# e2e-ui builds the UI first, so the e2e binary embeds it
+# (TestUIServedAndEvents checks the app then; the browser smoke test with
+# MYCEL_TEST_BROWSER=1 needs it). CI builds the UI before its e2e step.
+e2e-ui: web e2e
 
 lint:
 	golangci-lint run ./...

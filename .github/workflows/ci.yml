@@ -16,9 +16,39 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+      # The e2e binary embeds the UI (phase 6: the hub and node serve the app).
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: web/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+        working-directory: web
+      - run: pnpm build
+        working-directory: web
       - run: go build ./...
       - run: go test ./...
       - run: go test -tags e2e -count=1 -timeout 10m ./test/e2e/...
+
+  # The UI: typecheck, unit tests (including the CLI parity check) and the
+  # size budget (initial load under 1 MiB without the 3D chunk; the job
+  # fails when it is exceeded).
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: web/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - run: make web-check
 
   lint:
     runs-on: ubuntu-latest

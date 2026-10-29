@@ -51,6 +51,7 @@ var readOnlyMethods = map[string]bool{
 	mycelv1connect.EventServiceListAuditProcedure:         true,
 	mycelv1connect.JobServiceGetJobProcedure:              true,
 	mycelv1connect.JobServiceListJobsProcedure:            true,
+	mycelv1connect.JobServiceStreamLogsProcedure:          true, // the inspector's logs tab
 	mycelv1connect.JobServiceListProfilesProcedure:        true,
 	mycelv1connect.JobServiceListNodesForProfileProcedure: true,
 	mycelv1connect.ArtifactServiceListArtifactsProcedure:  true,

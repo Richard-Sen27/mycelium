@@ -1,0 +1,22 @@
+/* Lists inside the admin forms (users, join tokens, channel members). */
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.list > li {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  padding: var(--s-2) 0;
+  border-bottom: var(--hairline) solid var(--line-faint);
+}
+.list > li > :last-child {
+  margin-left: auto;
+}
+.meta {
+  color: var(--text-2);
+  font-size: var(--text-sm);
+}

@@ -56,6 +56,9 @@ type Record struct {
 	// Addr is the dialled upstream address (ip:port); empty when nothing
 	// was dialled.
 	Addr string
+	// Unauthenticated marks a request that failed proxy authentication:
+	// SandboxID is then only the id the client claimed, not a sandbox.
+	Unauthenticated bool
 }
 
 const (

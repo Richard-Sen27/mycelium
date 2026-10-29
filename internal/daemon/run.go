@@ -273,6 +273,7 @@ func run(ctx context.Context, opts Options, ready chan<- Ready, cfg runConfig) e
 	wg.Go(func() { n.heartbeatLoop(ictx) })
 	wg.Go(func() { n.renewLoop(ictx) })
 	wg.Go(func() { n.jobs.loop(ictx) })
+	wg.Go(func() { n.jobs.egress.loop(ictx) })
 	wg.Go(func() { n.sharing.loop(ictx) })
 	wg.Go(func() { n.grants.loop(ictx) })
 	wg.Go(func() { n.grants.b.usageLoop(ictx) })

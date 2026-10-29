@@ -67,6 +67,7 @@ type jobManager struct {
 	mu       sync.Mutex
 	closed   bool
 	proxy    *egress.Proxy // nil while the proxy is down
+	egress   *egressForwarder
 	proxyErr string
 	jobs     map[string]*runningJob // accepted, sandbox not yet cleaned up
 	finished map[string]time.Time   // finished job ids (id-only memory)
@@ -110,6 +111,7 @@ func newJobManager(n *node) *jobManager {
 		ctx: ctx, cancel: cancel,
 		jobs: map[string]*runningJob{}, finished: map[string]time.Time{},
 	}
+	m.egress = newEgressForwarder(n)
 	m.ensureProxy()
 	// Leftovers of a previous run: unfinished job directories are stale.
 	m.janitor(true)
@@ -168,10 +170,12 @@ func (m *jobManager) proxyStatus() string {
 	return "unavailable"
 }
 
-// audit logs the proxy's records; byte totals come from Unregister.
+// audit logs the proxy's records and forwards them to the hub's audit log
+// (egressfwd.go); byte totals come from Unregister.
 func (m *jobManager) audit(rec egress.Record) {
 	m.log.Info("egress", "sandbox", rec.SandboxID, "host", rec.Host, "port", rec.Port,
 		"allowed", rec.Allowed, "bytes", rec.BytesIn+rec.BytesOut)
+	m.egress.add(rec)
 }
 
 // runningCount is the number of jobs holding a slot.
@@ -504,6 +508,7 @@ func (m *jobManager) runJob(ctx context.Context, rj *runningJob, cs *mycelv1.Cre
 		if proxy != nil {
 			bin, bout := proxy.Unregister(sbxID)
 			egressBytes = bin + bout
+			m.egress.unbind(sbxID)
 		}
 		if len(collected) > 0 {
 			outputs, out.artifacts = m.uploadOutputs(rj.id, workDir, outDir, collected, &out, log)
@@ -569,8 +574,10 @@ func (m *jobManager) runJob(ctx context.Context, rj *runningJob, cs *mycelv1.Cre
 	for _, r := range allRules {
 		allowText = append(allowText, string(r))
 	}
+	m.egress.bind(sbxID, rj.id)
 	proxyURL, err := proxy.Register(sbxID, allRules)
 	if err != nil {
+		m.egress.unbind(sbxID)
 		proxy = nil
 		out.err = "egress: " + err.Error()
 		return

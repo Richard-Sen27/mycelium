@@ -245,6 +245,7 @@ func (s *server) handleTelemetry(msg *nats.Msg) {
 	if p := s.beats.record(name, time.Now(), inv, hash); p != nil {
 		s.writeBeat(name, p)
 	}
+	s.handleEgress(name, &hb)
 	if inv != nil {
 		// A full inventory follows every (re)connect: bring the node up to
 		// date (freeze state, grants) off this callback.

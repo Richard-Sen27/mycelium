@@ -55,7 +55,7 @@ package hub
 // the header `Mycel-Scope: network:read` acts as the node owner's user
 // (role member, visibility of that owner) but may only call the read-only
 // methods listed in readOnlyMethods (every List*/Get*/Whoami/FreezeStatus/
-// ListProfiles/ListMessages/BlackboardGet/Watch/WatchEvents/Search/ListAudit
+// ListProfiles/ListMessages/BlackboardGet/Watch/WatchEvents/Search/ListAudit/StreamLogs
 // plus GET /api/artifacts/{id}); anything else is PermissionDenied "node read
 // scope" and audited. The daemon's local UI reaches the hub this way (see
 // internal/daemon/localapi.go). Without the header a node certificate keeps

@@ -126,7 +126,7 @@ func (p *Proxy) admit(w http.ResponseWriter, r *http.Request, host string, port 
 		if p.allowDenial(claimed) {
 			p.log.Warn("egress authentication failed", "remote", r.RemoteAddr, "claimed_id", claimed,
 				"method", r.Method, "host", host, "port", port)
-			p.emit(Record{SandboxID: claimed, Host: host, Port: port, Method: r.Method})
+			p.emit(Record{SandboxID: claimed, Host: host, Port: port, Method: r.Method, Unauthenticated: true})
 		}
 		proxyAuthRequired(w)
 		return nil, nil, false

@@ -408,8 +408,8 @@ function Egress({ j }: { j: Job }) {
         rowTone={(r) => (r.allowed ? undefined : 'alert')}
         empty={
           <EmptyState title="No per-connection records for this job">
-            Egress is denied by default. In v1 the node logs every connection its egress proxy allows or refuses locally and reports only
-            the byte total to the hub (above); per-connection records appear here once nodes report them.
+            Egress is denied by default. The node reports every connection its egress proxy allows or refuses (host, port, verdict, bytes;
+            never contents) to the hub's audit log within a few seconds; this job has made none yet.
           </EmptyState>
         }
       />

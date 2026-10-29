@@ -51,6 +51,7 @@ type server struct {
 
 	enrolLimit *rateLimiter
 	beats      *beatState
+	egress     *egressState // egress audit bounds (egress_audit.go)
 	ch         *chanState
 
 	// life serialises agent lifecycle changes (usage accounting, pause,
@@ -168,6 +169,7 @@ func runHub(ctx context.Context, opts Options, ready chan<- Ready) (err error) {
 		dir:        dir, allowFake: opts.AllowFakeProfile, jobs: newJobState(newJobConfig),
 		grants: newGrantState(gcfg, rules), freeze: newFreezeState(), syncs: newSyncState(), ui: newUIState(),
 		events: newEventHub(),
+		egress: newEgressState(),
 		move:   loadMoveState(dir, cfg, ca, log),
 	}
 	st.onChange = s.events.emit
