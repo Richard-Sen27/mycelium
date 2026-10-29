@@ -360,7 +360,7 @@ func TestJobIsolationFake(t *testing.T) {
 	h, alpha, _ := startP4(t, "E2E_SECRET=leak")
 
 	j := runJob(t, h, "", append([]string{"--profile", "fake", "--node", "alpha", "--"},
-		shell(`env; echo "E2E_PWD=$(pwd -P)"; echo "E2E_HOME=$HOME"`, `set & echo E2E_PWD=%CD% & echo E2E_HOME=%HOME%`)...)...)
+		shell(`env; echo "E2E_PWD=$(pwd -P)"; echo "E2E_HOME=$HOME"`, `set & echo E2E_PWD=%CD%& echo E2E_HOME=%HOME%`)...)...)
 	j = waitFinished(t, h, j.ID, 60*time.Second)
 	logs := jobLogs(t, h, j.ID)
 	if j.State != jobSucceeded {
@@ -369,6 +369,7 @@ func TestJobIsolationFake(t *testing.T) {
 	var pwd, home string
 	for _, line := range strings.Split(strings.ReplaceAll(logs, "\r", ""), "\n") {
 		key, val, _ := strings.Cut(line, "=")
+		val = strings.TrimSpace(val)
 		switch {
 		case strings.HasPrefix(strings.ToUpper(key), "MYCEL_"):
 			t.Errorf("job environment has %s", line)

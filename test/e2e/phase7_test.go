@@ -620,10 +620,14 @@ func TestDiscoveryAndRedirectFollow(t *testing.T) {
 	if ns.BusURL != "tls://"+bBus || ns.RedirectIssuedAt != red.IssuedAt {
 		t.Errorf("alpha's state after the redirect: %+v, want bus tls://%s issued_at %d", ns, bBus, red.IssuedAt)
 	}
-	// alpha's node certificate works on B: online there, and runs a job.
+	// alpha's node certificate works on B: online there, its running job
+	// can be cancelled from B (on a small machine it holds alpha's only
+	// slot), and it runs a new job.
 	if !waitFor(t, 30*time.Second, func() bool { return listNodes(t, b, "")["alpha"].Online }) {
 		t.Fatalf("hub B does not list alpha online: %+v", listNodes(t, b, "")["alpha"])
 	}
+	b.MustCLI("", "job", "cancel", long.ID)
+	waitState(t, b, long.ID, jobCancelled, 30*time.Second)
 	fakeJobOK(t, b, bob, "alpha", "after-move")
 
 	// A refuses a post with FailedPrecondition and the signed redirect; a

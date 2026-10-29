@@ -261,6 +261,12 @@ func (p *proc) stop() {
 
 // kill kills the process and waits for it to be reaped.
 func (p *proc) kill() {
+	if runtime.GOOS == "windows" {
+		// Process.Kill ends the daemon alone; a sandbox command still running
+		// (its working directory inside the temp dir) would outlive it and
+		// fail the directory's cleanup. taskkill ends the whole tree.
+		_ = exec.Command("taskkill", "/T", "/F", "/PID", strconv.Itoa(p.cmd.Process.Pid)).Run() //nolint:gosec // our own child's pid
+	}
 	_ = p.cmd.Process.Kill()
 	<-p.done
 }
