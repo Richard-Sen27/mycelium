@@ -288,7 +288,10 @@ func runHub(ctx context.Context, opts Options, ready chan<- Ready) (err error) {
 	apiAddr := ln.Addr().String()
 	busAddr := net.JoinHostPort(localHost(busHost), strconv.Itoa(bs.Port()))
 	stopTunnel := s.startTunnel(ctx, httpSrv, busAddr)
-	defer stopTunnel()
+	s.tun.mu.Lock()
+	s.tun.stop = stopTunnel
+	s.tun.mu.Unlock()
+	defer s.stopTunnel()
 	log.Info("hub running", "api", apiAddr, "bus", busAddr, "trust_domain", s.td)
 	if ready != nil {
 		r := Ready{APIAddr: apiAddr, BusAddr: busAddr, HubURL: "https://" + localAddr(apiAddr)}

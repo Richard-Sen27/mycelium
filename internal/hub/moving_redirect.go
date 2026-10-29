@@ -96,7 +96,7 @@ func (s *server) startMove(ctx context.Context) func() {
 	moved := m.r != nil
 	m.mu.Unlock()
 	if moved {
-		// Moved mode entered at start. Integration hook: stop the hub tunnel here.
+		// Moved mode entered at start: startTunnel sees isMoved and stays down.
 		return func() {}
 	}
 	if !moved && s.cfg.MDNSEnabled() && s.cfg.AdvertiseURL != "" && os.Getenv(EnvNoMDNS) != "1" {
@@ -328,8 +328,9 @@ func (s *server) redirectTo(ctx context.Context, actor, hubURL, busURL string) (
 	}
 	m.r = r
 	m.mu.Unlock()
-	// Moved mode entered at runtime. Integration hook: stop the hub tunnel here.
+	// Moved mode entered at runtime: stop advertising and leave the relay.
 	m.stopAdvertising()
+	s.stopTunnel()
 
 	nodes, err := s.st.listNodes(ctx)
 	if err != nil {

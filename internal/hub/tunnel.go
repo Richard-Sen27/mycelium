@@ -40,6 +40,30 @@ type tunnelState struct {
 	client *tunnel.Client
 	err    string // why the tunnel is not running although enabled
 	acme   *tunnel.ACME
+	stop   func() // set once the tunnel runs; nil otherwise
+	once   sync.Once
+}
+
+// stopTunnel ends the relay session for good (shutdown, or the hub moved:
+// a moved hub must not keep receiving the network's traffic through the
+// relay). Safe to call more than once and before the tunnel started.
+func (s *server) stopTunnel() {
+	s.tun.mu.Lock()
+	stop := s.tun.stop
+	s.tun.mu.Unlock()
+	if stop != nil {
+		s.tun.once.Do(stop)
+	}
+}
+
+// isMoved reports whether the hub is in moved mode.
+func (s *server) isMoved() bool {
+	if s.move == nil {
+		return false
+	}
+	s.move.mu.Lock()
+	defer s.move.mu.Unlock()
+	return s.move.r != nil
 }
 
 // newHubACME returns the ACME support of a hub with `acme.enabled`, nil
@@ -69,6 +93,13 @@ func (s *server) startTunnel(ctx context.Context, httpSrv *http.Server, busAddr 
 	acmeCerts := s.tun.acme
 	if !s.cfg.Tunnel.Enabled {
 		acmeCerts.Start(ctx)
+		return func() {}
+	}
+	if s.isMoved() {
+		s.tun.mu.Lock()
+		s.tun.err = "hub moved: the tunnel stays down"
+		s.tun.mu.Unlock()
+		s.log.Info("tunnel not started: hub moved", "to", s.cfg.MovedTo)
 		return func() {}
 	}
 	fail := func(msg string) func() {
