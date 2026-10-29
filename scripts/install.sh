@@ -226,8 +226,9 @@ install_source() {
 		need go
 		gov="$(go env GOVERSION 2>/dev/null || true)"
 		minor="$(printf '%s' "$gov" | sed -n 's/^go1\.\([0-9][0-9]*\).*/\1/p')"
-		[ -n "$minor" ] && [ "$minor" -ge "$GO_MIN_MINOR" ] ||
+		if [ -z "$minor" ] || [ "$minor" -lt "$GO_MIN_MINOR" ]; then
 			die "Go 1.${GO_MIN_MINOR} or newer is required for --from-source (found ${gov:-none}); see https://go.dev/dl/"
+		fi
 	fi
 	ref="${REF:-${VERSION:-main}}"
 	src="$TMP/src"

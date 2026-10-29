@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -314,7 +315,7 @@ func TestLinuxRunscMissing(t *testing.T) {
 	}
 	for _, f := range []string{"runsc", "gvisor-bin/gvisor_sentry", "gvisor-bin/runsc-fd-parking"} {
 		fi, err := os.Stat(filepath.Join(l.BinDir, f))
-		if err != nil || fi.Mode().Perm() != 0o755 {
+		if err != nil || (runtime.GOOS != "windows" && fi.Mode().Perm() != 0o755) {
 			t.Fatalf("%s: %v %v", f, fi, err)
 		}
 	}
@@ -416,7 +417,7 @@ func TestLinuxInstallDirAndPathHint(t *testing.T) {
 	log = nil
 	l2.Log = func(s string) { log = append(log, s) }
 	l2.Yes = true
-	l2.Getenv = func(string) string { return "/usr/bin:" + l2.BinDir + "/" }
+	l2.Getenv = func(string) string { return "/usr/bin" + string(os.PathListSeparator) + l2.BinDir + "/" }
 	l2.Downloader = &fakeDownloader{bodies: map[string][]byte{GVisor["amd64"].URL: release}}
 	if err := l2.Setup(context.Background()); err != nil {
 		t.Fatal(err)

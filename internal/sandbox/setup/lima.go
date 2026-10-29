@@ -146,6 +146,17 @@ func (l *Lima) Status(ctx context.Context) Report {
 	l.defaults()
 	r := probe(ctx, l.Backend, "darwin")
 	d := r.Details
+	// The pinned image and its cache state do not need Lima.
+	if image, _, err := l.image(); err == nil {
+		d["image"] = image
+		if c, ok := l.Backend.(imageCacher); ok {
+			cached, loc, err := c.ImageCached(image)
+			if err == nil {
+				d["image_cached"] = cached
+				d["image_url"] = loc
+			}
+		}
+	}
 	path, err := l.LookPath("limactl")
 	if err != nil {
 		d["lima"] = ""
@@ -156,16 +167,6 @@ func (l *Lima) Status(ctx context.Context) Report {
 		f := strings.Fields(firstLine(string(out)))
 		if len(f) > 0 {
 			d["lima"] = strings.TrimPrefix(f[len(f)-1], "v")
-		}
-	}
-	if image, _, err := l.image(); err == nil {
-		d["image"] = image
-		if c, ok := l.Backend.(imageCacher); ok {
-			cached, loc, err := c.ImageCached(image)
-			if err == nil {
-				d["image_cached"] = cached
-				d["image_url"] = loc
-			}
 		}
 	}
 	if l.LimaHome != "" {

@@ -523,8 +523,9 @@ func TestRelayPerSourceCap(t *testing.T) {
 	if st := r.Stats(); st.Active != 3 {
 		t.Fatalf("one source holds %d of 8 slots, want 3 (%+v)", st.Active, st)
 	}
-	// Freed slots are usable again.
-	for _, c := range conns[:3] {
+	// Freed slots are usable again. Which three of the eight connections won
+	// the slots is up to the scheduler, so close them all.
+	for _, c := range conns {
 		_ = c.Close()
 	}
 	eventually(t, 5*time.Second, "slots freed", func() bool { return r.Stats().Active == 0 })

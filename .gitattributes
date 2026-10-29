@@ -1,0 +1,5 @@
+# LF in every checkout: tests read README.md and the shell scripts byte by
+# byte, and Windows git defaults to CRLF.
+* text=auto eol=lf
+*.png binary
+*.tar.bz2 binary

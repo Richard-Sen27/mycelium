@@ -214,7 +214,7 @@ func TestClaudeCodeSpawnMatchesReadme(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, after, ok := strings.Cut(string(b), "```yaml\nspawn:")
+	_, after, ok := strings.Cut(strings.ReplaceAll(string(b), "\r\n", "\n"), "```yaml\nspawn:")
 	if !ok {
 		t.Fatal("README.md has no ```yaml block starting with spawn:")
 	}

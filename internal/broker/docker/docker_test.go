@@ -249,6 +249,11 @@ type env struct {
 
 func newEnv(t *testing.T, network string) *env {
 	t.Helper()
+	// A Windows node serves every grant over loopback TCP (the broker's
+	// default there); a unix endpoint with a Windows path is not a URL.
+	if network == "unix" && runtime.GOOS == "windows" {
+		network = ""
+	}
 	// Unix socket paths are short on macOS (104 bytes); t.TempDir is too long.
 	dir, err := os.MkdirTemp("", "dkb")
 	if err != nil {

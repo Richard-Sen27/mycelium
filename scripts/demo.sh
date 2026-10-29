@@ -165,7 +165,9 @@ say "\$ mycel user add alice --role member"
 ALICE_KEY="$(hub_cli user add alice --role member --json | json_field api_key)"
 say "\$ mycel user add bob --role member"
 BOB_KEY="$(hub_cli user add bob --role member --json | json_field api_key)"
-[ -n "$ALICE_KEY" ] && [ -n "$BOB_KEY" ] || die "user add returned no API key"
+if [ -z "$ALICE_KEY" ] || [ -z "$BOB_KEY" ]; then
+	die "user add returned no API key"
+fi
 say "alice and bob exist; their API keys were printed once to the admin (kept in shell variables here)"
 show user ls
 
