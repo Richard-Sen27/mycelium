@@ -113,3 +113,19 @@ Not covered yet:
 - The relay is trusted for the source address it reports for each forwarded connection: per-IP rate limits behind the relay use it, and audit records such addresses with `remote_via_relay: true`. Bus connections through the tunnel reach the bus from the hub's loopback forwarder, so the bus sees a loopback source for them (bus authentication is the node certificate, not the address).
 - Relay limits: 1024 forwarded connections per hub (a fixed budget of yamux stream windows), 64 concurrent and 64 new per second per source (IPv4 address or IPv6 /64), 10 minutes idle; the control listener holds at most 64 unanswered connections with a 10 s handshake timeout and 4 new per second per source; the per-source tables evict the least recently seen source instead of refusing new ones. The hub holds at most 64 tunnel streams waiting for their header. Strings from the relay are stripped of control characters and truncated before they are logged, stored or printed.
 - ACME is never requested inside a client hello: a background issuer starts once the hub is reachable (through the relay: after the first attach), backs off from 1 minute to 1 hour and waits at least 10 minutes after any failure, so probes cannot use up the CA's validation limits. Until then browsers get the CA-issued certificate.
+
+## What v1 does not cover
+
+Threats and gaps that remain after phase 7, in the order they would matter to a small team:
+
+- **Verified only on one Mac.** Every acceptance test is green on macOS with the fake and the Lima backends. The Linux and Windows sandbox backends, the Windows scheduled task, the systemd unit, `install.ps1`, the WSL2 distro setup and the real Docker and GPU brokers are compile-checked or tested against fakes only; the CI matrix has never run because the repository has not been pushed.
+- **Approvals are audited, not signed.** The spec says decisions are signed; v1 records them in the append-only audit log under the approver's identity, which the hub (and so a hub compromise) could alter.
+- **The hub is the trust root.** A compromised hub holds the CA key and can redirect every node, read every channel and approve every grant. Export files carry that key under a passphrase of at least 12 characters; choose it accordingly.
+- **The relay is trusted for source addresses** (per-IP limits and audit remote fields), never for content. One relay serves one hub.
+- **Same-user boundary on a node.** Every process of the node's OS user can read the local token, and with it every local broker credential and the owner's network-wide read view. Trusted-host agents are, by design, inside that boundary.
+- **Grants attach at sandbox creation.** A grant approved for an already running job never reaches its command (see D024); request grants before the job starts.
+- **No audit retention or export signing.** The audit table grows without bound (egress rows are rate-limited per node but not pruned); release archives are checksummed but not signed; the LICENSE is a placeholder until the owner chooses the PolyForm variant.
+- **Userland mDNS can rename a host.** Advertising goes through the system responder on macOS and avahi on Linux; the userland responder (Windows, Linux without avahi) only ever claims a dedicated name, but it is still a second responder on the machine.
+- **Wall clocks keep counting while a job is paused** by `local_first` or a freeze; long jobs on a shared laptop should run with `local_first` off.
+- **No model-backed operator agent**, no A2A gateway, no PTY adapter, no browser broker, no channel bridges, no remote harness spawning, no Linux GPU passthrough, no Cedar policy, no gamified theme: all listed by the spec as later work.
+

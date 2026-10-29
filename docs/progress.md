@@ -102,7 +102,7 @@ Status: done locally (all packages merged; phase 6 acceptance tests green: node 
 
 ## Phase 7 — Team rollout
 
-Status: in progress (every package merged: install, sandbox setup, relay, discovery/redirect/export; acceptance tests in progress)
+Status: done locally (all packages merged; phase 7 acceptance tests green: hub behind a relay with restart recovery, discovery with a fake mDNS, export/import round trip, signed redirect followed by nodes, CLIs and joins, the demo script, every quickstart command; the two-machine ten-minute quickstart, a real relay, ACME and real multicast need the owner)
 
 | Package | Owns | State | Notes |
 | --- | --- | --- | --- |
@@ -110,7 +110,7 @@ Status: in progress (every package merged: install, sandbox setup, relay, discov
 | P7-move | `internal/discovery`, join discovery, Redirect ctl and following (node, CLI, join), `identity.SignRedirect/VerifyRedirect`, hub export/import/redirect | merged | round 1 |
 | P7-install | `scripts/`, `internal/service`, `.goreleaser.yaml`, release workflow, docs/quickstart.md, scripts/demo.sh | merged | real launchd round trip and the demo pass on this Mac; Windows task, install.ps1 and the Linux systemd unit need the owner (see below) |
 | P7-sandbox-setup | `internal/sandbox/setup`, `mycel sandbox setup|status` (creates the Windows `mycel-sbx` WSL2 distro with gVisor; Lima and gVisor checks elsewhere) | todo | after P7-install: nothing created the Windows distro before |
-| P7-e2e | `test/**` (relay tunnel, discovery with a fake browser, export/import/redirect follow, install script dry runs, demo walkthrough) | in progress | round 2 |
+| P7-e2e | `test/**` (relay tunnel, discovery with a fake browser, export/import/redirect follow, install script dry runs, demo walkthrough) | merged | round 2 |
 
 ### Owner verification for phase 7 (cannot be done on this Mac)
 
@@ -121,3 +121,9 @@ Status: in progress (every package merged: install, sandbox setup, relay, discov
 - Linux: `mycel service install/status/stop/start/uninstall` on a real systemd user session, `StandardOutput=append:` (systemd 240+), `loginctl enable-linger`.
 - Release: push main, tag `v*`, confirm `release-check` and `release.yml` are green; the install scripts need a public release; replace the placeholder LICENSE first.
 - Network: a public domain for ACME; a VPS for the relay; the ten-minute two-machine quickstart.
+
+## v1 definition of done (spec "Definition of done for v1")
+
+- All acceptance tests pass on macOS, Windows and Linux CI runners: macOS green locally for every phase (fake backend, Lima isolation suite, browser smoke test); Windows and Linux runs happen on the first push (ci.yml builds the UI, runs unit, e2e and the Linux real-mDNS step; release-check validates goreleaser).
+- docs/ contains the spec, the decisions log (D001–D026), the security notes with "What v1 does not cover", and the quickstart: done.
+- No `TODO(security)` comment remains: checked at phase 6 close (none).
